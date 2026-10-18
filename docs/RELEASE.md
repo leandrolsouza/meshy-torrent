@@ -17,6 +17,7 @@ Na raiz do repositório, com Node.js 22.17.0, npm e as ferramentas nativas do Wi
 npm ci
 npm run typecheck
 npm run lint
+npm run security:audit
 npm test -- --runInBand
 npm run qa:release
 npm run dist:win
@@ -63,9 +64,9 @@ Preparação executada com Node.js 22.17.0 e Electron 44.7.0:
 - WebTorrent e `node-datachannel` importados com sucesso usando o executável
   empacotado em modo Node, sem abrir a interface nem acessar a sessão do usuário.
 - `npm run typecheck`: aprovado nos três projetos.
-- `npm test -- --runInBand`: 97 suítes e 1.561 testes aprovados, incluindo o
+- `npm test -- --runInBand`: 99 suítes e 1.595 testes aprovados, incluindo o
   atualizador e a regressão de restauração de metadados sem magnet original.
-- `npm run lint`: nenhum erro, com 293 avisos preexistentes; arquivos de código
+- `npm run lint`: nenhum erro, com 297 avisos preexistentes; arquivos de código
   alterados também conferidos separadamente, sem erros.
 - Prettier dos arquivos alterados e `git diff --check`: aprovados.
 - YAML do workflow analisado localmente; execução no GitHub ainda pendente.
@@ -78,6 +79,8 @@ Preparação executada com Node.js 22.17.0 e Electron 44.7.0:
   recriação do cliente, restauração de sessão, integridade SHA-256 e remoção mantendo
   o arquivo. Renderer/preload de produção exercitados com serviços e IPC reais,
   temas claro/escuro e pt-BR/en-US. Veja o [escopo e limites](QA_RELEASE.md).
+- `npm run security:audit`: aprovado com quatro entradas cobertas pela avaliação
+  restrita de aplicabilidade; relatório bruto preservado, com quatro alertas altos.
 
 A primeira execução completa encontrou uma falha intermitente na propriedade 2
 de `tests/unit/ipcHandlerOpenDestination.pbt.test.ts`, com seed `1844049217` e
@@ -86,9 +89,14 @@ abrir `.bmp`, `.aac` e `.m4a`. A expectativa foi corrigida e os quatro formatos
 passaram a ter exemplos fixos, preservando as 100 execuções aleatórias. O código
 de abertura de arquivos não foi alterado.
 
-Essas verificações não incluem instalação em máquina limpa, execução completa de
+Essas verificações automatizadas não incluem instalação em máquina limpa, execução completa de
 `main/index.ts`, swarm público ou atualização entre versões assinadas. O instalador
 é um candidato para homologação, ainda não publicado.
+
+Em 18/10/2026, o usuário confirmou que instalou o candidato em sua própria máquina
+e que o aplicativo está funcionando. O relato registra instalação e funcionamento
+geral nesse ambiente; não comprova os cenários específicos do roteiro abaixo nem
+a instalação em máquina limpa.
 
 ## Automação
 
@@ -99,10 +107,19 @@ o estado Authenticode e guarda os arquivos da atualização e checksums por 14 d
 além das evidências de homologação. Não instala nem publica o candidato.
 Tags precisam corresponder à versão do manifesto, por exemplo `v0.1.0-beta.1`.
 
-A auditoria de produção roda em um job independente e falha com alertas altos ou
-críticos. O pacote pode ser produzido para investigação e homologação mesmo quando
-a auditoria falha; isso não libera sua publicação. O workflow tem somente permissão
-de leitura do repositório e não cria GitHub Releases.
+A auditoria de produção roda em um job independente com `npm run security:audit`.
+Ela preserva o relatório bruto e rejeita alertas altos/críticos, exceto a cadeia
+exata coberta pela [avaliação de aplicabilidade](SECURITY_REVIEW.md), com versões,
+fontes e prazo fixados. Falha na auditoria impede a liberação pública. O workflow
+tem somente permissão de leitura do repositório e não cria GitHub Releases.
+
+A [execução 39144212334](https://github.com/leandrolsouza/meshy-torrent/actions/runs/39144212334),
+do commit `58d3f8e`, falhou no teste de symlink/junction e no comando bruto de auditoria.
+O teste simulava `lstat` comparando caminhos textualmente, sem considerar a
+canonicalização de `realpath` no Windows. Foi substituído por uma junction real
+em diretório temporário próprio, conferindo a rejeição e a preservação dos arquivos.
+A revisão atual da auditoria aplica a política restrita acima. Uma nova execução
+remota com essas correções ainda é necessária; o QA não chegou a rodar naquele job.
 
 O `format:check` global possui pendências preexistentes. A automação confere a
 formatação da infraestrutura de release; não afirma que todo o repositório está
@@ -150,9 +167,10 @@ Na árvore instalada, `bittorrent-tracker@11.2.3` importa `ip` em
 `lib/server/parse-udp.js` e usa `toString`; a busca nos consumidores não encontrou
 chamadas a `ip.isPublic`. Essa observação estática ajuda a avaliar aplicabilidade,
 mas não elimina o alerta nem equivale a uma auditoria completa de segurança.
-O downgrade para WebTorrent 0.7.3 sugerido pelo npm não foi aplicado. Antes da
-publicação, resolver a dependência ou registrar uma avaliação explícita de risco,
-incluindo os caminhos efetivamente usados pelo aplicativo.
+O downgrade para WebTorrent 0.7.3 sugerido pelo npm não foi aplicado. A avaliação
+explícita dos caminhos usados e a exceção técnica temporária estão registradas em
+[SECURITY_REVIEW.md](SECURITY_REVIEW.md). Os quatro alertas permanecem visíveis no
+relatório bruto; a verificação restrita não os declara corrigidos.
 
 Também é necessário revisar os fluxos de IPC, abertura/exclusão de arquivos,
 metadados não confiáveis e privacidade dos logs antes da liberação pública.
@@ -161,7 +179,8 @@ metadados não confiáveis e privacidade dos logs antes da liberação pública.
 
 - [ ] Tipos, testes, lint e build do commit candidato aprovados.
 - [ ] Workflow executado no GitHub e logs revisados.
-- [ ] Auditoria tratada, com correção ou avaliação explícita registrada.
+- [x] Avaliação explícita registrada para o aviso de `ip`, com exceção restrita e prazo.
+- [ ] Auditoria do commit final aprovada dentro do prazo da avaliação.
 - [ ] Homologação em máquina limpa concluída com o instalador final.
 - [ ] Confirmar que a beta sem assinatura mantém a atualização manual.
 - [ ] Licença, autoria e avisos de terceiros conferidos no pacote final.

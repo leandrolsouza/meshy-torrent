@@ -1,0 +1,34 @@
+{
+    "schemaVersion": 1,
+    "advisory": "https://github.com/advisories/GHSA-2p57-rm9w-gvfp",
+    "expiresOn": "2026-11-17",
+    "assessment": "docs/SECURITY_REVIEW.md",
+    "packages": {
+        "ip": {
+            "version": "2.0.1"
+        },
+        "bittorrent-tracker": {
+            "version": "11.2.3",
+            "via": "ip"
+        },
+        "torrent-discovery": {
+            "version": "11.0.21",
+            "via": "bittorrent-tracker"
+        },
+        "webtorrent": {
+            "version": "3.0.21",
+            "via": "torrent-discovery"
+        }
+    },
+    "files": {
+        "node_modules/ip/lib/ip.js": "dba00bc15fbfd6111ae422ec30dfbba677385f2e851c4869c8d44dbef1655601",
+        "node_modules/bittorrent-tracker/index.js": "f4ed6cdbb42d4f30cb5ffd1d07db4852e983da6033a542d1c186d70505194ec2",
+        "node_modules/bittorrent-tracker/client.js": "d2d39e2a552e9b93b8f8a0b0970412cfb63a42d0a590f41a0e6af6947ce0b3a2",
+        "node_modules/bittorrent-tracker/server.js": "011de1811a1d4136781e297b9bf92eeddc9fdcf2b1b75b7aed236584e2b83522",
+        "node_modules/bittorrent-tracker/lib/server/parse-udp.js": "51091af371a35074c809e8366abc77679db519a09b8e02fa4e2cf52103c0f91b",
+        "node_modules/bittorrent-tracker/lib/client/http-tracker.js": "446a2bd841aa3f7045e647c94b46925e6e080bca7f40895122fb6156504e0edb",
+        "node_modules/bittorrent-tracker/lib/client/udp-tracker.js": "c06f8ac75240ae61cd5c0fead77d1110f193bb74af34dfbab4a797446869b51d",
+        "node_modules/bittorrent-tracker/lib/client/websocket-tracker.js": "a31f8b36d2b52de86f399b54381c58ac248341fc1fed6733302a5ddb03135718",
+        "node_modules/torrent-discovery/index.js": "fc282e4c75e3da1602175346baecce3de8f4b4ad6e68f1ea538b55dba492702f"
+    }
+}

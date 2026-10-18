@@ -21,6 +21,7 @@
         "dist:win": "npm run build && node scripts/prepare-icons.cjs && electron-builder --win nsis --x64 --publish never && npm run release:checksums",
         "dist:win:signed": "npm run build && node scripts/prepare-icons.cjs && electron-builder --win nsis --x64 --publish never --config.forceCodeSigning=true && npm run release:checksums",
         "release:checksums": "node scripts/release-checksums.cjs",
+        "security:audit": "node scripts/audit-production.cjs",
         "qa:transfer": "node scripts/release-smoke.mjs --transfer-only",
         "qa:release": "npm run build && node scripts/release-smoke.mjs",
         "postinstall": "node node_modules/electron/install.js && npm rebuild node-datachannel && electron-rebuild"

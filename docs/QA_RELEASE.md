@@ -61,9 +61,16 @@ do sistema é bloqueada no auxiliar; nenhuma associação é registrada. A rede 
 transferência fica restrita a peers locais, sem descoberta pública.
 
 Em 18/10/2026, a execução local com Electron 44.7.0 passou os dois cenários. A suíte
-Jest também passou: 97 suítes, 1.561 testes. O workflow Windows passou a executar
+Jest também passou: 99 suítes, 1.595 testes. O workflow Windows passou a executar
 `qa:release` e guardar apenas relatórios, capturas e logs por 14 dias; sua execução
 no GitHub ainda precisa ser confirmada.
+
+## Confirmação manual do usuário
+
+Em 18/10/2026, o usuário informou que instalou o candidato em sua própria máquina
+e que o aplicativo está funcionando. Essa confirmação é adicional aos testes
+automatizados e cobre instalação e funcionamento geral naquele ambiente. Não houve
+relato detalhado dos demais cenários do roteiro nem de uso de uma máquina limpa.
 
 ## O que falta homologar
 
@@ -78,7 +85,8 @@ atual encerra as conexões ao concluir (`main/torrentEngine.ts`, listener `done`
 o seeder usado pelo auxiliar é outro cliente WebTorrent. Portanto, o resultado
 não comprova upload/seeding contínuo pelo Meshy após a conclusão.
 
-Os quatro alertas altos de dependências registrados no roteiro de release continuam
-pendentes de correção ou avaliação explícita. A beta permanece sem assinatura e com
+Os quatro alertas altos de dependências receberam uma
+[avaliação de aplicabilidade com prazo](SECURITY_REVIEW.md), sem remover os alertas
+do relatório bruto. A beta permanece sem assinatura e com
 atualização manual por decisão do projeto; a homologação automática do atualizador
 assinado fica para quando houver certificado.
