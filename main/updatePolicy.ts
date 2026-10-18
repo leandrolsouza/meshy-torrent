@@ -1,6 +1,6 @@
 import type { UpdateDisabledReason } from '../shared/types';
 
-/** Não permita que um pacote sem editor confiável pule a validação Authenticode. */
+/** Restringe o updater ao feed oficial; builds sem certificado usam o SHA-512 do feed. */
 export function getUpdateDisabledReason(options: {
     isPackaged: boolean;
     platform: NodeJS.Platform;
@@ -21,10 +21,14 @@ export function getUpdateDisabledReason(options: {
         (config.protocol !== undefined && config.protocol !== 'https')
     )
         return 'configuration';
+    // Sem certificado, electron-updater não encontra publisherName e não verifica
+    // Authenticode. O canal permanece limitado ao GitHub oficial em HTTPS e o
+    // electron-updater valida o SHA-512 do instalador indicado pelo manifesto.
+    if (config.publisherName === undefined || config.publisherName === null) return undefined;
     const names = Array.isArray(config.publisherName)
         ? config.publisherName
         : [config.publisherName];
     if (!names.length || names.some((name) => typeof name !== 'string' || !name.trim()))
-        return 'unsigned';
+        return 'configuration';
     return undefined;
 }

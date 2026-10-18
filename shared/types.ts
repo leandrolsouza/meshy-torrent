@@ -217,20 +217,20 @@ export interface MagnetHandlerStatus {
 
 // ─── MeshyAPI ─────────────────────────────────────────────────────────────────
 
-export type UpdateDisabledReason = 'development' | 'platform' | 'unsigned' | 'configuration';
+export type UpdateDisabledReason = 'development' | 'platform' | 'configuration';
 
 export interface AppUpdateStatus {
     revision: number;
     currentVersion: string;
     phase:
-    | 'disabled'
-    | 'idle'
-    | 'upToDate'
-    | 'checking'
-    | 'downloading'
-    | 'downloaded'
-    | 'installing'
-    | 'error';
+        | 'disabled'
+        | 'idle'
+        | 'upToDate'
+        | 'checking'
+        | 'downloading'
+        | 'downloaded'
+        | 'installing'
+        | 'error';
     disabledReason?: UpdateDisabledReason;
     availableVersion?: string;
     /** Progresso de download de 0 a 100. */

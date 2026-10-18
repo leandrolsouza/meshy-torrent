@@ -1,13 +1,13 @@
 # Release beta do Meshy
 
-O próximo candidato é **0.1.0-beta.2 para Windows x64**, com instalador NSIS por
+O próximo candidato é **0.1.0-beta.3 para Windows x64**, com instalador NSIS por
 usuário. macOS e Linux continuam configurados no electron-builder, mas precisam de
 homologação própria antes de serem anunciados como plataformas deste release.
 
-A beta será distribuída **sem assinatura Authenticode e com atualização manual**,
-conforme a decisão atual do projeto. O certificado ficou para uma etapa futura;
-a ausência dele não é um bloqueio para gerar este candidato. O atualizador permanece
-desabilitado nos pacotes sem assinatura.
+A beta será distribuída **sem assinatura Authenticode**, mas os builds Windows x64
+usarão atualização automática pelo feed oficial, com validação de SHA-512. Sem
+certificado, a identidade do editor não é verificada; veja
+[AUTO_UPDATES.md](AUTO_UPDATES.md).
 
 ## Gerar o candidato
 
@@ -29,8 +29,8 @@ cabeçalhos e ferramentas do electron-builder. Não executa o instalador nem pub
 
 Arquivos esperados para esta versão:
 
-- `dist/Meshy-0.1.0-beta.2-win-x64-setup.exe`
-- `dist/Meshy-0.1.0-beta.2-win-x64-setup.exe.blockmap`
+- `dist/Meshy-0.1.0-beta.3-win-x64-setup.exe`
+- `dist/Meshy-0.1.0-beta.3-win-x64-setup.exe.blockmap`
 - `dist/latest.yml`
 - `dist/SHA256SUMS`
 
@@ -45,8 +45,8 @@ Para conferir no PowerShell, execute na pasta dos arquivos extraídos:
 
 ```powershell
 Get-Content SHA256SUMS
-Get-FileHash -Algorithm SHA256 .\Meshy-0.1.0-beta.2-win-x64-setup.exe
-Get-AuthenticodeSignature .\Meshy-0.1.0-beta.2-win-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\Meshy-0.1.0-beta.3-win-x64-setup.exe
+Get-AuthenticodeSignature .\Meshy-0.1.0-beta.3-win-x64-setup.exe
 ```
 
 Compare o hash calculado com `SHA256SUMS`. Um checksum não comprova a identidade
@@ -163,10 +163,10 @@ do escopo da beta sem certificado.
 - [ ] Conferir bandeja, encerramento e liberação dos processos.
 - [ ] Reinstalar sobre o candidato anterior preservando a sessão de teste.
 - [ ] Desinstalar e conferir atalhos e associações, preservando os downloads.
-- [ ] Homologar atualização entre duas versões assinadas, incluindo confirmação,
+- [ ] Homologar atualização entre duas versões beta sem assinatura, incluindo confirmação,
       modo bandeja e restauração da sessão, conforme [AUTO_UPDATES.md](AUTO_UPDATES.md).
 
-O último item só se aplica quando a assinatura e o atualizador forem ativados.
+Também homologar a validação Authenticode quando houver certificado configurado.
 O teste local automatizado não comprova seeding contínuo pelo Meshy: atualmente
 a engine encerra as conexões ao concluir, conforme detalhado em [QA_RELEASE.md](QA_RELEASE.md).
 
@@ -209,9 +209,9 @@ utilizados continuam incorporados ao bundle. Veja o [registro de fontes e revis�
 - [x] Avaliação explícita registrada para o aviso de `ip`, com exceção restrita e prazo.
 - [x] Auditoria do commit mesclado aprovada dentro do prazo da avaliação.
 - [x] Homologação em máquina limpa aprovada pelo usuário para o candidato testado.
-- [x] Confirmar que a beta sem assinatura mantém a atualização manual.
+- [x] Confirmar que a beta sem assinatura usa o feed oficial e valida SHA-512.
 - [x] Licença, autoria e avisos de terceiros conferidos no pacote Windows local.
-- [x] [Notas da versão](releases/0.1.0-beta.2.md) descrevem a correção incluída.
+- [x] [Notas da versão](releases/0.1.0-beta.3.md) descrevem a correção incluída.
 - [ ] Tag, commit e arquivos finais correspondem; checksums calculados após o build final.
 - [ ] Criar o GitHub Release como **pre-release** e anexar instalador, blockmap,
       `latest.yml` e `SHA256SUMS` da mesma execução.
@@ -220,13 +220,13 @@ Os dois últimos itens são concluídos pelo workflow da tag. Para publicar esta
 com o commit final verificado e enviado ao repositório:
 
 ```sh
-git tag -a v0.1.0-beta.2 -m "Meshy 0.1.0-beta.2"
-git push origin v0.1.0-beta.2
+git tag -a v0.1.0-beta.3 -m "Meshy 0.1.0-beta.3"
+git push origin v0.1.0-beta.3
 ```
 
 Acompanhe Windows, auditoria e publicação no GitHub Actions. A versão publicada fica
-em [v0.1.0-beta.2](https://github.com/leandrolsouza/meshy-torrent/releases/tag/v0.1.0-beta.2).
+em [v0.1.0-beta.3](https://github.com/leandrolsouza/meshy-torrent/releases/tag/v0.1.0-beta.3).
 
 O atualizador está integrado, com instruções em [AUTO_UPDATES.md](AUTO_UPDATES.md).
-Enquanto não houver certificado, o candidato permanece com instalação manual e
-informa essa limitação na interface.
+Sem certificado, o app informa que não valida a identidade do editor; builds
+antigos que bloqueiam o updater precisam de uma instalação manual desta versão.

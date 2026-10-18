@@ -72,7 +72,7 @@ test.each(['0.1.0', '0.1.0+build-42'])(
     },
 );
 
-test.each<UpdateDisabledReason>(['development', 'platform', 'unsigned', 'configuration'])(
+test.each<UpdateDisabledReason>(['development', 'platform', 'configuration'])(
     'bloqueia verificações e instalação quando desabilitado por %s',
     async (reason) => {
         const { manager, driver } = setup(reason);
@@ -246,12 +246,13 @@ const signedConfig = {
 const policy = (configuration: unknown) =>
     getUpdateDisabledReason({ isPackaged: true, platform: 'win32', arch: 'x64', configuration });
 
-test('exige feed conhecido e editor assinado; sem certificado a atualização permanece desabilitada', () => {
+test('limita atualizações ao feed oficial e aceita builds sem certificado', () => {
     expect(policy(signedConfig)).toBeUndefined();
-    expect(policy({ ...signedConfig, publisherName: undefined })).toBe('unsigned');
-    expect(policy({ ...signedConfig, publisherName: [] })).toBe('unsigned');
-    expect(policy({ ...signedConfig, publisherName: [' '] })).toBe('unsigned');
-    expect(policy({ ...signedConfig, publisherName: [12] })).toBe('unsigned');
+    expect(policy({ ...signedConfig, publisherName: undefined })).toBeUndefined();
+    expect(policy({ ...signedConfig, publisherName: null })).toBeUndefined();
+    expect(policy({ ...signedConfig, publisherName: [] })).toBe('configuration');
+    expect(policy({ ...signedConfig, publisherName: [' '] })).toBe('configuration');
+    expect(policy({ ...signedConfig, publisherName: [12] })).toBe('configuration');
     expect(policy({ ...signedConfig, repo: 'outro' })).toBe('configuration');
     expect(policy({ ...signedConfig, protocol: 'http' })).toBe('configuration');
     expect(policy(null)).toBe('configuration');

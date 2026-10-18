@@ -92,14 +92,13 @@ test('resposta inicial antiga não sobrescreve um evento de atualização mais n
     expect(screen.getByRole('button', { name: 'Reiniciar e atualizar' })).toBeEnabled();
 });
 
-test('informa a exigência de assinatura sem oferecer instalação no pacote sem certificado', async () => {
-    api.getUpdateStatus.mockResolvedValue({
-        success: true,
-        data: { ...idle, phase: 'disabled', disabledReason: 'unsigned' },
-    });
+test('mantém atualização habilitada e explica a verificação nos builds sem certificado', async () => {
     view();
-    expect(await screen.findByText(/exigem uma versão assinada/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Verificar atualizações' })).toBeDisabled();
+    expect(await screen.findByRole('status')).toHaveAttribute(
+        'title',
+        expect.stringContaining('identidade do editor não é validada'),
+    );
+    expect(screen.getByRole('button', { name: 'Verificar atualizações' })).toBeEnabled();
     expect(api.checkForUpdates).not.toHaveBeenCalled();
 });
 
