@@ -1,0 +1,10 @@
+{
+  "task_id": "task-bugfixes-remove-metadata",
+  "task_description": "Fix two bugs: (1) ConfirmDialog blocked by inert + onRemove error silently swallowed; (2) TorrentMetadata unavailable for completed torrents after app restart because DownloadManager has no metadata cache.",
+  "status": "completed",
+  "feature_order": [
+    "FEAT-001",
+    "FEAT-002"
+  ],
+  "blocked_reason": null
+}
