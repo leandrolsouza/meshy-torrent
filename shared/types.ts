@@ -124,6 +124,9 @@ export interface PersistedDownloadItem {
     selectedFileCount?: number;
     totalFileCount?: number;
     files?: TorrentFileInfo[];
+    creator?: string | null;
+    comment?: string | null;
+    creationDate?: number | null;
 }
 
 export type FileOperation = 'locate' | 'move' | 'verify';
@@ -220,14 +223,14 @@ export interface AppUpdateStatus {
     revision: number;
     currentVersion: string;
     phase:
-        | 'disabled'
-        | 'idle'
-        | 'upToDate'
-        | 'checking'
-        | 'downloading'
-        | 'downloaded'
-        | 'installing'
-        | 'error';
+    | 'disabled'
+    | 'idle'
+    | 'upToDate'
+    | 'checking'
+    | 'downloading'
+    | 'downloaded'
+    | 'installing'
+    | 'error';
     disabledReason?: UpdateDisabledReason;
     availableVersion?: string;
     /** Progresso de download de 0 a 100. */

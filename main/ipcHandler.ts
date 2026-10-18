@@ -1448,20 +1448,22 @@ export function registerIpcHandlers(
     trackedHandle(
         'torrent:get-metadata',
         async (_event, payload: unknown): Promise<IPCResponse<TorrentMetadata>> => {
+            const result = validatePayload<{ infoHash: string }>(payload, infoHashHexSchema);
+            if (!result.valid) return fail(ErrorCodes.INVALID_PARAMS);
+
+            const { infoHash } = result.data;
+            const item = downloadManager.getAll().find((i) => i.infoHash === infoHash);
+            if (!item) return fail(ErrorCodes.TORRENT_NOT_FOUND);
+
+            if (!torrentEngine) return fail(ErrorCodes.ENGINE_NOT_AVAILABLE);
+            if (torrentEngine.isRestarting()) return fail(ErrorCodes.ENGINE_RESTARTING);
+
             try {
-                const result = validatePayload<{ infoHash: string }>(payload, infoHashHexSchema);
-                if (!result.valid) return fail(ErrorCodes.INVALID_PARAMS);
-
-                const { infoHash } = result.data;
-                const item = downloadManager.getAll().find((i) => i.infoHash === infoHash);
-                if (!item) return fail(ErrorCodes.TORRENT_NOT_FOUND);
-
-                if (!torrentEngine) return fail(ErrorCodes.ENGINE_NOT_AVAILABLE);
-                if (torrentEngine.isRestarting()) return fail(ErrorCodes.ENGINE_RESTARTING);
-
                 const metadata = torrentEngine.getMetadata(infoHash);
                 return ok(metadata);
             } catch (err) {
+                const cached = downloadManager.getCachedMetadata(infoHash);
+                if (cached) return ok(cached);
                 return failWithLog('torrent:get-metadata', err);
             }
         },

@@ -14,6 +14,7 @@ import type {
     TorrentFileInfo,
     TorrentStatus,
     DiskSpaceInfo,
+    TorrentMetadata,
 } from '../shared/types';
 import {
     DEFAULT_MAX_CONCURRENT_DOWNLOADS,
@@ -61,6 +62,8 @@ export interface DownloadManager {
     reorderQueue(infoHash: string, newIndex: number): string[];
     /** Retorna a ordem atual da fila */
     getQueueOrder(): string[];
+    /** Retorna metadados em cache para um torrent concluído (disponível após restart sem engine) */
+    getCachedMetadata(infoHash: string): TorrentMetadata | undefined;
     on(event: 'update', listener: (item: DownloadItem) => void): void;
     on(event: 'remove', listener: (infoHash: string) => void): void;
     removeListener(event: 'update', listener: (item: DownloadItem) => void): void;
@@ -144,6 +147,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     private readonly selectedFileIndicesMap = new Map<string, number[]>();
     private readonly confirmedMetadata = new Map<string, Buffer>();
     private readonly fileCatalog = new Map<string, TorrentFileInfo[]>();
+    private readonly _metadataCache = new Map<string, TorrentMetadata>();
     private readonly torrentFiles: TorrentFilesService;
     private readonly recoverMetadata: ((magnetUri: string) => Promise<PreparedTorrent>) | undefined;
     /** Fila ordenada de infoHashes aguardando slot de download */
@@ -312,6 +316,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                     completedAt,
                     elapsedMs,
                 };
+                try {
+                    const meta = this.engine.getMetadata(info.infoHash);
+                    this._metadataCache.set(info.infoHash, meta);
+                } catch { /* metadata may not be available */ }
                 void this.engine
                     .pause(info.infoHash)
                     .catch((err) =>
@@ -353,6 +361,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             if (!existing || existing.fileOperation) return;
 
             this._clearMetadataTimer(infoHash);
+            try {
+                const meta = this.engine.getMetadata(infoHash);
+                this._metadataCache.set(infoHash, meta);
+            } catch { /* metadata may not be available */ }
             const completedAt = Date.now();
             const elapsedMs = completedAt - existing.addedAt;
             const updated: DownloadItem = {
@@ -420,7 +432,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
         selectedIndices: number[],
     ): Promise<DownloadItem> {
         const work = this.admission
-            .catch(() => {})
+            .catch(() => { })
             .then(async () => {
                 const { preview } = prepared;
                 if (this.items.has(preview.infoHash) || this.pendingHashes.has(preview.infoHash))
@@ -463,8 +475,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                         progress: complete
                             ? 1
                             : selectedBytes > 0
-                              ? downloadedSize / selectedBytes
-                              : 0,
+                                ? downloadedSize / selectedBytes
+                                : 0,
                         selectedFileCount: indices.length,
                         totalFileCount: preview.files.length,
                         status: complete ? 'completed' : hasSlot ? 'paused' : 'queued',
@@ -544,7 +556,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
         destinationFolder?: string,
     ): Promise<DownloadItem> {
         const work = this.admission
-            .catch(() => {})
+            .catch(() => { })
             .then(() =>
                 this._withLock(infoHash, async () => {
                     const existing = this.items.get(infoHash);
@@ -682,7 +694,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                         return { ...result };
                     } catch (error) {
                         if (!destinationCommitted) {
-                            await this.engine.detachTorrent(infoHash).catch(() => {});
+                            await this.engine.detachTorrent(infoHash).catch(() => { });
                             await move
                                 ?.rollback()
                                 .catch((rollbackError) =>
@@ -1055,7 +1067,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
 
     async resume(infoHash: string, admitted = false): Promise<void> {
         if (this.diskSpace && !admitted) {
-            const work = this.admission.catch(() => {}).then(() => this.resume(infoHash, true));
+            const work = this.admission.catch(() => { }).then(() => this.resume(infoHash, true));
             this.admission = work;
             return work;
         }
@@ -1585,6 +1597,14 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 if (!hasTorrentMagicBytes(buffer)) continue;
                 this.confirmedMetadata.set(persistedItem.infoHash, buffer);
             }
+            if (persistedItem.creator !== undefined) {
+                this._metadataCache.set(persistedItem.infoHash, {
+                    infoHash: persistedItem.infoHash,
+                    creator: persistedItem.creator,
+                    comment: persistedItem.comment ?? null,
+                    creationDate: persistedItem.creationDate ?? null,
+                });
+            }
             const folderExists = existsSync(persistedItem.destinationFolder);
 
             let status: TorrentStatus = persistedItem.status;
@@ -1807,6 +1827,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 this.originalMagnetUris.get(item.infoHash) ??
                 this.queuedMagnetUris.get(item.infoHash);
             const selectedFileIndices = this.selectedFileIndicesMap.get(item.infoHash);
+            const cachedMeta = this._metadataCache.get(item.infoHash);
             return {
                 infoHash: item.infoHash,
                 name: item.name,
@@ -1825,16 +1846,23 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 ...(files.length ? { files } : {}),
                 ...(this.confirmedMetadata.has(item.infoHash)
                     ? {
-                          torrentFileBase64: this.confirmedMetadata
-                              .get(item.infoHash)!
-                              .toString('base64'),
-                      }
+                        torrentFileBase64: this.confirmedMetadata
+                            .get(item.infoHash)!
+                            .toString('base64'),
+                    }
                     : {}),
                 ...(item.selectedFileCount !== undefined
                     ? { selectedFileCount: item.selectedFileCount }
                     : {}),
                 ...(item.totalFileCount !== undefined
                     ? { totalFileCount: item.totalFileCount }
+                    : {}),
+                ...(cachedMeta !== undefined
+                    ? {
+                        creator: cachedMeta.creator,
+                        comment: cachedMeta.comment,
+                        creationDate: cachedMeta.creationDate,
+                    }
                     : {}),
             };
         });
@@ -1874,10 +1902,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
      */
     private _withLock<T>(infoHash: string, fn: () => Promise<T>): Promise<T> {
         const prev = this.opLocks.get(infoHash) ?? Promise.resolve();
-        const next = prev.catch(() => {}).then(fn);
+        const next = prev.catch(() => { }).then(fn);
         this.opLocks.set(infoHash, next);
         // Limpar o lock quando a cadeia terminar para não acumular memória
-        next.catch(() => {}).then(() => {
+        next.catch(() => { }).then(() => {
             if (this.opLocks.get(infoHash) === next) {
                 this.opLocks.delete(infoHash);
             }
@@ -2212,6 +2240,12 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
 
     getQueueOrder(): string[] {
         return [...this.queue];
+    }
+
+    // ── getCachedMetadata ───────────────────────────────────────────────────────
+
+    getCachedMetadata(infoHash: string): TorrentMetadata | undefined {
+        return this._metadataCache.get(infoHash);
     }
 
     // ── EventEmitter overloads (type-safe) ──────────────────────────────────────

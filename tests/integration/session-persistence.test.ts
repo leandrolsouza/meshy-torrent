@@ -14,6 +14,7 @@ import { createSettingsManager } from '../../main/settingsManager';
 import type { TorrentEngine, TorrentInfo, TorrentStatus } from '../../main/torrentEngine';
 import type { PersistedDownloadItem, PersistedStore } from '../../main/downloadManager';
 import type { SettingsStore } from '../../main/settingsManager';
+import type { TorrentMetadata } from '../../shared/types';
 
 // ─── FS Mocks (hoisted by Jest) ───────────────────────────────────────────────
 
@@ -857,5 +858,74 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
             expect(restoredCompleted!.completedAt).toBe(2_500_000);
             expect(restoredCompleted!.elapsedMs).toBe(500_000);
         });
+    });
+});
+
+
+// ─── TorrentMetadata round-trip ───────────────────────────────────────────────
+
+describe('Integration: TorrentMetadata persisted and restored for completed torrents', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockExistsSync.mockReturnValue(true);
+        mockAccessSync.mockReturnValue(undefined);
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it('persists and restores TorrentMetadata for completed torrents', async () => {
+        const hash = 'a'.repeat(40);
+        const expectedMetadata: TorrentMetadata = {
+            infoHash: hash,
+            creator: 'TestCreator',
+            comment: 'Test comment',
+            creationDate: 1700000000000,
+        };
+
+        const settingsStore = makeMockSettingsStore('/downloads');
+        const settings = createSettingsManager({
+            store: settingsStore,
+            getDownloadsPath: () => '/downloads',
+        });
+        const store = makeMockStore();
+        const engine1 = makeMockEngine();
+        (engine1.getMetadata as jest.Mock).mockReturnValue(expectedMetadata);
+        (engine1.addTorrentFile as jest.Mock).mockResolvedValue(
+            makeTorrentInfo({ infoHash: hash, status: 'downloading' as TorrentStatus }),
+        );
+
+        const manager1 = createDownloadManager(engine1, settings, store, undefined, {
+            disableCleanupTimer: true,
+        });
+        await manager1.addTorrentFile('/path/to/file.torrent');
+
+        // Emitir done — captura metadados no cache
+        engine1.emit('done', hash);
+
+        // Verificar que o cache foi populado
+        expect(manager1.getCachedMetadata(hash)).toEqual(expectedMetadata);
+
+        // Persistir sessão
+        manager1.persistSession();
+
+        // Verificar que os campos de metadados foram persistidos
+        const persisted = store.get('downloads');
+        expect(persisted?.[0]).toMatchObject({
+            creator: 'TestCreator',
+            comment: 'Test comment',
+            creationDate: 1700000000000,
+        });
+
+        // Criar novo manager e restaurar sessão
+        const engine2 = makeMockEngine();
+        const manager2 = createDownloadManager(engine2, settings, store, undefined, {
+            disableCleanupTimer: true,
+        });
+        await manager2.restoreSession();
+
+        // Verificar que os metadados foram restaurados
+        expect(manager2.getCachedMetadata(hash)).toEqual(expectedMetadata);
     });
 });

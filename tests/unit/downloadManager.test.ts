@@ -14,6 +14,7 @@ import { createDownloadManager } from '../../main/downloadManager';
 import type { TorrentEngine, TorrentInfo, TorrentStatus } from '../../main/torrentEngine';
 import type { SettingsManager } from '../../main/settingsManager';
 import type { DownloadItem } from '../../main/downloadManager';
+import type { TorrentMetadata } from '../../shared/types';
 
 // ─── FS Mocks (hoisted by Jest) ───────────────────────────────────────────────
 
@@ -1688,11 +1689,11 @@ describe('DownloadManager — Aplicação automática de trackers globais (Requi
 
         // Segundo tracker lança erro (duplicata)
         (engine.addTracker as jest.Mock)
-            .mockImplementationOnce(() => {}) // tracker1 OK
+            .mockImplementationOnce(() => { }) // tracker1 OK
             .mockImplementationOnce(() => {
                 throw new Error('Tracker já presente');
             }) // tracker2 falha
-            .mockImplementationOnce(() => {}); // tracker3 OK
+            .mockImplementationOnce(() => { }); // tracker3 OK
 
         const info = makeTorrentInfo({
             infoHash: INFO_HASH,
@@ -1829,5 +1830,40 @@ describe('DownloadManager — Propriedade 7: Após aplicar trackers globais, sup
             ),
             { numRuns: 100 },
         );
+    });
+});
+
+
+// ─── done event populates metadata cache ─────────────────────────────────────
+
+describe('DownloadManager — done event populates _metadataCache', () => {
+    beforeEach(() => {
+        mockExistsSync.mockReturnValue(true);
+        mockAccessSync.mockReturnValue(undefined);
+    });
+
+    it('getCachedMetadata retorna metadados do engine após evento done', async () => {
+        const expectedMeta: TorrentMetadata = {
+            infoHash: INFO_HASH,
+            creator: 'TestCreator',
+            comment: 'Test comment',
+            creationDate: 1700000000000,
+        };
+
+        const engine = makeMockEngine(makeTorrentInfo({ status: 'downloading' as TorrentStatus }));
+        (engine.getMetadata as jest.Mock).mockReturnValue(expectedMeta);
+        const settings = makeMockSettings();
+        const manager = createDownloadManager(engine, settings, undefined, undefined, {
+            disableCleanupTimer: true,
+        });
+
+        const info = makeTorrentInfo({ status: 'downloading' as TorrentStatus });
+        (engine.addTorrentFile as jest.Mock).mockResolvedValueOnce(info);
+        await manager.addTorrentFile('/path/to/file.torrent');
+
+        // Emitir evento done — deve capturar metadados do engine
+        engine.emit('done', INFO_HASH);
+
+        expect(manager.getCachedMetadata(INFO_HASH)).toEqual(expectedMeta);
     });
 });

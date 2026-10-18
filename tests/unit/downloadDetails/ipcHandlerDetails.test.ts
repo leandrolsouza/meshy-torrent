@@ -60,6 +60,7 @@ function makeMockDownloadManager(items: Partial<DownloadItem>[] = []): DownloadM
         setMaxConcurrentDownloads: jest.fn(),
         reorderQueue: jest.fn().mockReturnValue([]),
         getQueueOrder: jest.fn().mockReturnValue([]),
+        getCachedMetadata: jest.fn().mockReturnValue(undefined),
         on: jest.fn(),
     } as unknown as DownloadManager;
 }
@@ -250,6 +251,56 @@ describe('IPC Detail Handlers — torrent:get-metadata', () => {
 
             expect(response.success).toBe(true);
             expect(response.data).toEqual(metadataWithNulls);
+        });
+    });
+
+    describe('usa cache quando engine lança (torrent completed após restart)', () => {
+        it('usa cache quando engine.getMetadata lança (torrent completed após restart)', async () => {
+            jest.clearAllMocks();
+            const item = makeDownloadItem({ status: 'completed' });
+            const cachedMeta: TorrentMetadata = {
+                infoHash: VALID_INFO_HASH,
+                creator: 'CachedCreator',
+                comment: 'Cached comment',
+                creationDate: 1700000000000,
+            };
+            const downloadManager = makeMockDownloadManager([item]);
+            (downloadManager.getCachedMetadata as jest.Mock).mockReturnValue(cachedMeta);
+            const torrentEngine = makeMockTorrentEngine({
+                getMetadata: jest.fn().mockImplementation(() => {
+                    throw new Error('Torrent not in engine');
+                }),
+            } as any);
+            const settingsManager = makeMockSettingsManager();
+
+            registerIpcHandlers(downloadManager, settingsManager, torrentEngine);
+
+            const handler = getHandler('torrent:get-metadata')!;
+            const response = (await handler(null, { infoHash: VALID_INFO_HASH })) as any;
+
+            expect(response.success).toBe(true);
+            expect(response.data).toEqual(cachedMeta);
+            expect(downloadManager.getCachedMetadata).toHaveBeenCalledWith(VALID_INFO_HASH);
+        });
+
+        it('retorna erro quando engine lança e cache está vazio', async () => {
+            jest.clearAllMocks();
+            const item = makeDownloadItem({ status: 'completed' });
+            const downloadManager = makeMockDownloadManager([item]);
+            (downloadManager.getCachedMetadata as jest.Mock).mockReturnValue(undefined);
+            const torrentEngine = makeMockTorrentEngine({
+                getMetadata: jest.fn().mockImplementation(() => {
+                    throw new Error('Torrent not in engine');
+                }),
+            } as any);
+            const settingsManager = makeMockSettingsManager();
+
+            registerIpcHandlers(downloadManager, settingsManager, torrentEngine);
+
+            const handler = getHandler('torrent:get-metadata')!;
+            const response = (await handler(null, { infoHash: VALID_INFO_HASH })) as any;
+
+            expect(response.success).toBe(false);
         });
     });
 
