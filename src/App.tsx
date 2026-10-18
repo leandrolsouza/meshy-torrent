@@ -8,6 +8,7 @@ import { AddTorrentModal } from './components/AddTorrent/AddTorrentModal';
 import { ExternalTorrentImporter } from './components/AddTorrent/ExternalTorrentImporter';
 import { SettingsPanel } from './components/Settings/SettingsPanel';
 import { LightModeButton } from './components/common/LightModeButton';
+import { UpdateControl } from './components/common/UpdateControl';
 import { MeshyIcon } from './components/common/MeshyIcon';
 import { FilterSidebar } from './components/DownloadList/FilterSidebar';
 import { applyTheme } from './themes/themeApplier';
@@ -186,6 +187,7 @@ function App(): React.JSX.Element {
                     )}
                 </span>
                 <div className={styles.statusBarControls}>
+                    <UpdateControl />
                     <LightModeButton appearance="statusbar" />
                     <span className={styles.statusBarSpeeds}>
                         <VscArrowDown style={{ verticalAlign: 'middle' }} />{' '}

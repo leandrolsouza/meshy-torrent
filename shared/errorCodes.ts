@@ -54,6 +54,10 @@ export const ErrorCodes = {
     FILE_SOURCE_MISSING: 'error.files.sourceMissing',
     FILE_MOVE_SOURCE_RETAINED: 'error.files.sourceRetained',
     PROTOCOL_REGISTRATION_FAILED: 'error.system.protocolRegistration',
+    UPDATE_UNAVAILABLE: 'error.update.unavailable',
+    UPDATE_FAILED: 'error.update.failed',
+    UPDATE_NOT_READY: 'error.update.notReady',
+    UPDATE_SESSION_FAILED: 'error.update.sessionFailed',
 
     // Rate limiting
     RATE_LIMITED: 'error.rateLimit',

@@ -6,9 +6,10 @@ out/
 dist/
 .build-resources/
 
-# Electron-vite
-*.env.local
-*.env.*.local
+# Electron-vite / env
+.env
+.env.*
+!.env.example
 
 # IDE / Editor
 .vscode/
@@ -16,8 +17,9 @@ dist/
 *.swp
 *.swo
 
-# Kiro
-.kiro/specs
+# Kiro — ignora tudo exceto steering (compartilhado com o time)
+.kiro/*
+!.kiro/steering/
 
 # OS files
 Thumbs.db

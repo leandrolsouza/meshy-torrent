@@ -28,6 +28,7 @@ test.each([
     ['onProgress', 'torrent:progress'],
     ['onError', 'torrent:error'],
     ['onExternalTorrentRequests', 'app:external-torrents'],
+    ['onUpdateStatus', 'app:update-status'],
 ] as const)('%s entrega apenas payload e remove seu próprio listener', (method, channel) => {
     const callback = jest.fn();
     const cleanup = api[method](callback);

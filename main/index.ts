@@ -18,6 +18,13 @@ import { randomUUID } from 'crypto';
 import { createBandwidthController } from './bandwidthController';
 import { createDownloadDiagnostics } from './downloadDiagnostics';
 import { createMagnetAssociation } from './magnetAssociation';
+import updater from 'electron-updater';
+import { readFileSync } from 'fs';
+import { load, FAILSAFE_SCHEMA } from 'js-yaml';
+import { createUpdateManager } from './updateManager';
+import { getUpdateDisabledReason } from './updatePolicy';
+import ptBR from '../src/locales/pt-BR.json';
+import enUS from '../src/locales/en-US.json';
 
 import ElectronStore from 'electron-store';
 
@@ -303,6 +310,54 @@ app.whenReady()
             );
         }
 
+        let updateConfiguration: unknown = null;
+        if (app.isPackaged && process.platform === 'win32') {
+            try {
+                updateConfiguration = load(
+                    readFileSync(join(process.resourcesPath, 'app-update.yml'), 'utf8'),
+                    { schema: FAILSAFE_SCHEMA },
+                );
+            } catch {
+                logger.warn('[Updates] Configuração de atualização indisponível');
+            }
+        }
+        const updates = createUpdateManager({
+            driver: updater.autoUpdater,
+            currentVersion: app.getVersion(),
+            setQuitting: (value) => background?.setQuitting(value),
+            disabledReason: getUpdateDisabledReason({
+                isPackaged: app.isPackaged,
+                platform: process.platform,
+                arch: process.arch,
+                configuration: updateConfiguration,
+            }),
+            publish: (status) => {
+                for (const window of BrowserWindow.getAllWindows()) {
+                    if (!window.isDestroyed() && !window.webContents.isDestroyed())
+                        window.webContents.send('app:update-status', status);
+                }
+            },
+            persistSession: () => {
+                if (downloadManager?.getAll().some((item) => item.fileOperation))
+                    throw new Error('Operação de arquivos em andamento');
+                downloadManager?.persistSession();
+                metrics.persistSnapshot();
+            },
+            confirmInstall: async () => {
+                const messages = settingsManager.get().locale === 'en-US' ? enUS : ptBR;
+                const result = await dialog.showMessageBox({
+                    type: 'question',
+                    title: messages['updates.confirmTitle'],
+                    message: messages['updates.confirmMessage'],
+                    buttons: [messages['common.cancel'], messages['updates.restart']],
+                    defaultId: 0,
+                    cancelId: 0,
+                    noLink: true,
+                });
+                return result.response === 1;
+            },
+        });
+
         // ── Register before-quit handler to persist session ────────────────────────
         app.on('before-quit', () => {
             desktopReady = false;
@@ -311,6 +366,7 @@ app.whenReady()
             diagnostics.dispose();
             clearInterval(diskTimer);
             preparation.dispose();
+            updates.dispose();
             downloadManager?.persistSession();
             metrics.persistSnapshot();
         });
@@ -324,6 +380,7 @@ app.whenReady()
             openExternal: (url) => shell.openExternal(url),
         });
         registerIpcHandlers(downloadManager, settingsManager, torrentEngine, preparation, {
+            updates,
             bandwidth,
             diagnostics,
             inbox: externalTorrents,
@@ -362,6 +419,7 @@ app.whenReady()
         });
         background.attachWindow(mainWindow);
         desktopReady = true;
+        updates.start();
         app.on('activate', () => showMainWindow());
     })
     .catch((err: unknown) => {

@@ -145,6 +145,57 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
 
     // ── Requirement 7.1, 7.2: Full round-trip ────────────────────────────────
 
+    it.each(['downloading', 'paused', 'queued'] as const)(
+        'restaura metadados salvos sem magnet ou caminho .torrent no estado %s',
+        async (status) => {
+            jest.useFakeTimers();
+            const hash = 'a'.repeat(40);
+            const metadata = Buffer.from('d4:infod4:name4:testee');
+            const settings = createSettingsManager({
+                store: makeMockSettingsStore('/downloads'),
+                getDownloadsPath: () => '/downloads',
+            });
+            const store = makeMockStore([
+                {
+                    infoHash: hash,
+                    name: 'test',
+                    totalSize: 100,
+                    downloadedSize: 20,
+                    progress: 0.2,
+                    status,
+                    destinationFolder: '/downloads',
+                    addedAt: 1,
+                    selectedFileIndices: [0],
+                    torrentFileBase64: metadata.toString('base64'),
+                },
+            ]);
+            const engine = makeMockEngine();
+            (engine.addTorrentBuffer as jest.Mock).mockResolvedValue(
+                makeTorrentInfo({ infoHash: hash }),
+            );
+            const manager = createDownloadManager(engine, settings, store, undefined, {
+                disableCleanupTimer: true,
+            });
+            await manager.restoreSession();
+            if (status !== 'downloading') {
+                expect(engine.addTorrentBuffer).not.toHaveBeenCalled();
+                (engine.resume as jest.Mock).mockRejectedValueOnce(new Error('Torrent ausente'));
+                await manager.resume(hash);
+            }
+            expect(engine.addTorrentBuffer).toHaveBeenCalledWith(metadata, false, {
+                destinationFolder: '/downloads',
+                selectedFileIndices: [0],
+            });
+            expect(engine.addMagnetLink).not.toHaveBeenCalled();
+            expect(manager.getAll()[0].status).toBe('downloading');
+            manager.persistSession();
+            expect(store.get('downloads')?.[0]).toMatchObject({
+                torrentFileBase64: metadata.toString('base64'),
+                selectedFileIndices: [0],
+            });
+        },
+    );
+
     describe('Full round-trip: add → persist → restore → verify', () => {
         it('persists and restores a torrent file download with correct state', async () => {
             const settingsStore = makeMockSettingsStore('/downloads');

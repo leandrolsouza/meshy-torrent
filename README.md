@@ -3,7 +3,7 @@
 Cliente BitTorrent desktop multiplataforma construído com Electron, React e WebTorrent.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-0.1.0-green.svg)
+![Version](https://img.shields.io/badge/version-0.1.0--beta.1-orange.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
 
 ---
@@ -33,6 +33,8 @@ Meshy é um cliente BitTorrent desktop com interface moderna inspirada no VS Cod
 - Notificações nativas do sistema operacional ao concluir um download
 - Temas customizáveis com aplicação dinâmica via variáveis CSS
 - Internacionalização: `pt-BR` e `en-US`
+- Atualizações pelo GitHub Releases no Windows x64, em distribuições assinadas,
+  com download automático e reinício confirmado pelo usuário
 - Configurações avançadas de rede: DHT, PEX, uTP
 
 Ao adicionar um torrent, o Meshy primeiro obtém apenas seus metadados. Escolha os arquivos e a
@@ -179,6 +181,18 @@ sem publicar releases. A configuração fica em `electron-builder.json`: NSIS no
 DMG no macOS e DEB/AppImage no Linux, com protocolo `magnet` e associação `.torrent`.
 Builds de distribuição recompilam dependências nativas e podem precisar de rede e ferramentas
 da plataforma. Cada instalador deve ser validado no sistema correspondente antes de publicar.
+
+O primeiro candidato é **0.1.0-beta.1 para Windows x64**. Use `npm run dist:win`
+para gerar o instalador NSIS e `dist/SHA256SUMS`. A publicação depende da
+[homologação do release](docs/RELEASE.md); veja as
+[notas do beta](docs/releases/0.1.0-beta.1.md). O atualizador já está integrado, mas
+o candidato sem certificado mantém a instalação manual. Para ativar as atualizações
+automáticas na distribuição, veja [assinatura e publicação](docs/AUTO_UPDATES.md).
+
+Use `npm run qa:release` para compilar e executar a homologação com transferência TCP
+local real, recuperação de sessão e capturas do renderer em temas e idiomas distintos.
+`npm run qa:transfer` executa somente a transferência. Os dados ficam isolados em
+`.build-resources/qa/`; veja o [escopo e as limitações](docs/QA_RELEASE.md).
 
 ---
 

@@ -56,6 +56,16 @@ jest.mock('../../src/themes/themeRegistry', () => ({
 // ─── Mock window.meshy ───────────────────────────────────────────────────────
 
 const mockMeshy = {
+    getUpdateStatus: jest.fn().mockResolvedValue({
+        success: true,
+        data: {
+            revision: 0,
+            currentVersion: '0.1.0-beta.1',
+            phase: 'disabled',
+            disabledReason: 'development',
+        },
+    }),
+    onUpdateStatus: jest.fn().mockReturnValue(() => {}),
     getAll: jest.fn().mockResolvedValue({ success: true, data: [] }),
     addMagnetLink: jest.fn().mockResolvedValue({ success: true, data: {} }),
     addTorrentFile: jest.fn().mockResolvedValue({ success: true, data: {} }),

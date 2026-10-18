@@ -1654,9 +1654,15 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             }
             this.emit('update', item);
 
-            // Restaurar magnetUri original para persistência futura e re-add ao engine
-            if (persistedItem.magnetUri) {
-                this.originalMagnetUris.set(item.infoHash, persistedItem.magnetUri);
+            // Arquivos/buffers legados podem ter apenas metadados inline. O magnet
+            // derivado identifica o torrent; _addStoredTorrent prioriza esses bytes.
+            const restoredMagnetUri =
+                persistedItem.magnetUri ??
+                (this.confirmedMetadata.has(item.infoHash)
+                    ? `magnet:?xt=urn:btih:${item.infoHash}`
+                    : undefined);
+            if (restoredMagnetUri) {
+                this.originalMagnetUris.set(item.infoHash, restoredMagnetUri);
             }
 
             // Restore selected file indices into the map for later persistence
@@ -1672,9 +1678,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 const queued: DownloadItem = { ...item, status: 'queued' };
                 this.items.set(item.infoHash, queued);
 
-                if (persistedItem.magnetUri) {
-                    this.queuedMagnetUris.set(item.infoHash, persistedItem.magnetUri);
-                    this.originalMagnetUris.set(item.infoHash, persistedItem.magnetUri);
+                if (restoredMagnetUri) {
+                    this.queuedMagnetUris.set(item.infoHash, restoredMagnetUri);
                 }
 
                 this.queue.push(item.infoHash);
@@ -1698,9 +1703,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                     this.items.set(item.infoHash, queued);
 
                     // Guardar a referência para retomar depois
-                    if (persistedItem.magnetUri) {
-                        this.queuedMagnetUris.set(item.infoHash, persistedItem.magnetUri);
-                        this.originalMagnetUris.set(item.infoHash, persistedItem.magnetUri);
+                    if (restoredMagnetUri) {
+                        this.queuedMagnetUris.set(item.infoHash, restoredMagnetUri);
                     }
 
                     this.queue.push(item.infoHash);
@@ -1716,8 +1720,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                         Math.max(0, item.totalSize - item.downloadedSize),
                         item.infoHash,
                     );
-                    if (persistedItem.magnetUri) {
-                        restoredInfo = await this._addStoredTorrent(item, persistedItem.magnetUri);
+                    if (restoredMagnetUri) {
+                        restoredInfo = await this._addStoredTorrent(item, restoredMagnetUri);
                     } else if (persistedItem.torrentFilePath) {
                         restoredInfo = await this.engine.addTorrentFile(
                             persistedItem.torrentFilePath,

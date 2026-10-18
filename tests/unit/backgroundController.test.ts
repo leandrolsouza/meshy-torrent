@@ -112,3 +112,15 @@ test('se a bandeja falhar, fechar continua permitido e não deixa janela inacess
     expect(preventDefault).not.toHaveBeenCalled();
     controller.dispose();
 });
+
+test('permite fechar para atualização antes de before-quit e restaura a bandeja após falha', () => {
+    const { controller, window } = setup();
+    const preventDefault = jest.fn();
+    controller.setQuitting(true);
+    window.emit('close', { preventDefault });
+    expect(preventDefault).not.toHaveBeenCalled();
+    controller.setQuitting(false);
+    window.emit('close', { preventDefault });
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    controller.dispose();
+});

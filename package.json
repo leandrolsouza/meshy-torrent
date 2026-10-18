@@ -1,6 +1,6 @@
 {
     "name": "meshy",
-    "version": "0.1.0",
+    "version": "0.1.0-beta.1",
     "description": "Meshy — cliente torrent desktop multiplataforma",
     "main": "out/main/index.mjs",
     "scripts": {
@@ -18,14 +18,34 @@
         "format:check": "prettier --check .",
         "pack": "npm run build && node scripts/prepare-icons.cjs && electron-builder --dir --publish never",
         "dist": "npm run build && node scripts/prepare-icons.cjs && electron-builder --publish never",
+        "dist:win": "npm run build && node scripts/prepare-icons.cjs && electron-builder --win nsis --x64 --publish never && npm run release:checksums",
+        "dist:win:signed": "npm run build && node scripts/prepare-icons.cjs && electron-builder --win nsis --x64 --publish never --config.forceCodeSigning=true && npm run release:checksums",
+        "release:checksums": "node scripts/release-checksums.cjs",
+        "qa:transfer": "node scripts/release-smoke.mjs --transfer-only",
+        "qa:release": "npm run build && node scripts/release-smoke.mjs",
         "postinstall": "node node_modules/electron/install.js && npm rebuild node-datachannel && electron-rebuild"
     },
-    "keywords": [],
-    "author": "",
+    "keywords": [
+        "bittorrent",
+        "torrent",
+        "desktop",
+        "electron"
+    ],
+    "author": "Contribuidores do Meshy",
+    "homepage": "https://github.com/leandrolsouza/meshy-torrent#readme",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/leandrolsouza/meshy-torrent.git"
+    },
+    "bugs": {
+        "url": "https://github.com/leandrolsouza/meshy-torrent/issues"
+    },
     "license": "MIT",
     "dependencies": {
         "electron-log": "^5.4.4",
         "electron-store": "^11.0.2",
+        "electron-updater": "^6.8.10",
+        "js-yaml": "^4.3.2",
         "react": "19.3.0",
         "react-dom": "19.3.0",
         "react-icons": "^5.7.0",
@@ -41,6 +61,7 @@
         "@testing-library/jest-dom": "^7.0.1",
         "@testing-library/react": "^16.3.3",
         "@types/jest": "^30.0.0",
+        "@types/js-yaml": "^4.0.9",
         "@types/node": "^26.6.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",

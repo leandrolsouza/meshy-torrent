@@ -16,6 +16,17 @@ import type {
 // ─── Expose API via contextBridge ────────────────────────────────────────────
 
 const meshyAPI: MeshyAPI = {
+    getUpdateStatus: () => ipcRenderer.invoke('app:update-status'),
+    checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),
+    installUpdate: () => ipcRenderer.invoke('app:install-update'),
+    onUpdateStatus(callback) {
+        const listener = (
+            _event: Electron.IpcRendererEvent,
+            status: import('../shared/types').AppUpdateStatus,
+        ) => callback(status);
+        ipcRenderer.on('app:update-status', listener);
+        return () => ipcRenderer.removeListener('app:update-status', listener);
+    },
     getBandwidthStatus: () => ipcRenderer.invoke('bandwidth:get-status'),
     setLightMode: (enabled) => ipcRenderer.invoke('bandwidth:set-light', { enabled }),
     batchAction: (infoHashes, operation, deleteFiles) =>

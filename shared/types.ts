@@ -214,7 +214,32 @@ export interface MagnetHandlerStatus {
 
 // ─── MeshyAPI ─────────────────────────────────────────────────────────────────
 
+export type UpdateDisabledReason = 'development' | 'platform' | 'unsigned' | 'configuration';
+
+export interface AppUpdateStatus {
+    revision: number;
+    currentVersion: string;
+    phase:
+        | 'disabled'
+        | 'idle'
+        | 'upToDate'
+        | 'checking'
+        | 'downloading'
+        | 'downloaded'
+        | 'installing'
+        | 'error';
+    disabledReason?: UpdateDisabledReason;
+    availableVersion?: string;
+    /** Progresso de download de 0 a 100. */
+    percent?: number;
+    error?: string;
+}
+
 export interface MeshyAPI {
+    getUpdateStatus(): Promise<IPCResponse<AppUpdateStatus>>;
+    checkForUpdates(): Promise<IPCResponse<AppUpdateStatus>>;
+    installUpdate(): Promise<IPCResponse<AppUpdateStatus>>;
+    onUpdateStatus(callback: (status: AppUpdateStatus) => void): () => void;
     getBandwidthStatus(): Promise<IPCResponse<BandwidthStatus>>;
     setLightMode(enabled: boolean): Promise<IPCResponse<BandwidthStatus>>;
     batchAction(

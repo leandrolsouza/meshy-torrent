@@ -93,6 +93,9 @@ export function createBackgroundController(options: {
     options.manager.on('update', update);
     options.manager.on('remove', update);
     return {
+        setQuitting(value: boolean) {
+            quitting = value;
+        },
         attachWindow(window: BrowserWindow) {
             window.on('close', (event) => {
                 if (

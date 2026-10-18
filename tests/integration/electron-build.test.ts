@@ -63,5 +63,11 @@ describe('build Electron', () => {
         expect(invoke).toHaveBeenCalledWith('app:get-magnet-handler-status');
         await api.openMagnetDefaultApps();
         expect(invoke).toHaveBeenCalledWith('app:open-magnet-default-apps');
+        await api.getUpdateStatus();
+        expect(invoke).toHaveBeenCalledWith('app:update-status');
+        await api.checkForUpdates();
+        expect(invoke).toHaveBeenCalledWith('app:check-updates');
+        await api.installUpdate();
+        expect(invoke).toHaveBeenCalledWith('app:install-update');
     });
 });

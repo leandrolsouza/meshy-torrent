@@ -42,6 +42,7 @@ import type { ExternalTorrentInbox } from './externalTorrents';
 import { resolveTorrentFile } from './torrentFiles';
 import { isTrustedIpcSender } from './rendererSecurity';
 import { canOpenDownloadedFile } from './fileOpening';
+import type { UpdateManager } from './updateManager';
 
 export type { IPCResponse } from '../shared/types';
 
@@ -275,6 +276,7 @@ export function registerIpcHandlers(
         openMagnetDefaultApps: () => Promise<void>;
         bandwidth?: BandwidthController;
         diagnostics?: DownloadDiagnostics;
+        updates?: UpdateManager;
     },
 ): void {
     // ── Wrapper para tracking automático de métricas ──────────────────────────
@@ -294,6 +296,22 @@ export function registerIpcHandlers(
             return withMetrics(channel, cid, () => handler(event, payload));
         });
     };
+
+    for (const [channel, action] of [
+        ['app:update-status', 'getStatus'],
+        ['app:check-updates', 'check'],
+        ['app:install-update', 'install'],
+    ] as const) {
+        trackedHandle(channel, async (_event, payload) => {
+            if (payload !== undefined) return fail(ErrorCodes.INVALID_PARAMS);
+            if (!desktop?.updates) return fail(ErrorCodes.UPDATE_UNAVAILABLE);
+            try {
+                return ok(await desktop.updates[action]());
+            } catch (error) {
+                return failWithLog(channel, error);
+            }
+        });
+    }
 
     const applyBandwidth = (force = false) => {
         if (desktop?.bandwidth) return desktop.bandwidth.refresh(force);

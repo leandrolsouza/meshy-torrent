@@ -323,7 +323,12 @@ describe('Property-Based Tests: open-destination IPC handlers', () => {
                     const expectedPath = path.resolve(destinationFolder, filePath);
 
                     expect(response.success).toBe(true);
-                    if (['.mp4'].includes(path.extname(filePath).toLowerCase())) {
+                    // Formatos permitidos que o alfabeto de arbFileSegment pode gerar.
+                    if (
+                        ['.mp4', '.bmp', '.aac', '.m4a'].includes(
+                            path.extname(filePath).toLowerCase(),
+                        )
+                    ) {
                         expect(mockShellOpenPath).toHaveBeenCalledWith(expectedPath);
                         expect(mockShowItemInFolder).not.toHaveBeenCalled();
                     } else {
@@ -332,7 +337,15 @@ describe('Property-Based Tests: open-destination IPC handlers', () => {
                     }
                 },
             ),
-            { numRuns: 100 },
+            {
+                numRuns: 100,
+                examples: [
+                    ['0'.repeat(40), 'a', 'a.bmp'],
+                    ['0'.repeat(40), 'a', 'a.aac'],
+                    ['0'.repeat(40), 'a', 'a.m4a'],
+                    ['0'.repeat(40), 'a', 'a.mp4'],
+                ],
+            },
         );
     });
 

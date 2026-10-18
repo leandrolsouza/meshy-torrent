@@ -52,7 +52,17 @@ npm run format:check
 ```
 
 `npm start` executa o build existente em `out/`; não compila as fontes.
-`npm run build` gera bundles, mas não há script de instalador/distribuição no manifesto.
+`npm run build` gera bundles. `npm run pack` empacota sem instalador e `npm run dist`
+gera a distribuição da plataforma atual. `npm run dist:win` gera o instalador NSIS
+Windows x64 e `dist/SHA256SUMS`. Esses comandos não publicam releases.
+O pacote Windows inclui `latest.yml` e blockmap para atualização. O beta atual é
+distribuído sem assinatura e usa atualização manual, inclusive nos builds por tag.
+`npm run dist:win:signed` continua disponível para quando houver certificado;
+pacotes sem editor configurado mantêm o atualizador desabilitado. Veja `docs/AUTO_UPDATES.md`.
+`npm run qa:release` compila e homologa transferência TCP local real e renderer/preload
+em perfil isolado; `npm run qa:transfer` executa somente a transferência. Auxiliares
+ficam em `scripts/qa/` e evidências em `.build-resources/qa/`, fora das suítes Jest.
+Esses cenários não instalam o app nem substituem a homologação em máquina limpa.
 
 O script `npm run typecheck` verifica explicitamente os projetos node, web e testes
 com o compilador nativo TypeScript 7. O pacote `typescript` é um alias da API

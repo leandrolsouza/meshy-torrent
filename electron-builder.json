@@ -2,9 +2,10 @@
     "appId": "org.meshy.client",
     "productName": "Meshy",
     "directories": { "output": "dist" },
-    "files": ["out/**/*", "icon.png", "package.json"],
+    "files": ["out/**/*", "icon.png", "package.json", "LICENSE"],
     "asarUnpack": ["**/*.node"],
     "icon": ".build-resources/icon.png",
+    "publish": [{ "provider": "github", "owner": "leandrolsouza", "repo": "meshy-torrent" }],
     "protocols": [{ "name": "BitTorrent magnet", "schemes": ["magnet"] }],
     "fileAssociations": [
         {
@@ -15,8 +16,16 @@
             "role": "Viewer"
         }
     ],
-    "win": { "target": "nsis" },
-    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true },
+    "win": {
+        "target": [{ "target": "nsis", "arch": ["x64"] }],
+        "verifyUpdateCodeSignature": true
+    },
+    "nsis": {
+        "oneClick": false,
+        "perMachine": false,
+        "allowToChangeInstallationDirectory": true,
+        "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
+    },
     "mac": { "target": "dmg", "category": "public.app-category.utilities" },
     "linux": {
         "target": ["deb", "AppImage"],
