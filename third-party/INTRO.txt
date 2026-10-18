@@ -1,0 +1,28 @@
+Meshy — Avisos de componentes de terceiros
+
+Este arquivo preserva atribuições e licenças das dependências de produção da
+árvore instalada, incluindo pacotes usados no renderer e no processo principal.
+Os textos originais permanecem sob suas respectivas licenças.
+
+Os ícones VS Code Icons / Codicons utilizados pela interface são de Microsoft
+Corporation e contribuidores, sob CC BY 4.0:
+https://github.com/microsoft/vscode-codicons
+https://creativecommons.org/licenses/by/4.0/
+São usados através de react-icons/vsc, convertidos para componentes React e
+dimensionados/coloridos pela interface. O código de outras coleções de ícones
+do pacote react-icons não é incluído no aplicativo empacotado.
+
+Electron e Chromium acompanham seus próprios avisos no diretório do aplicativo:
+LICENSE.electron.txt e LICENSES.chromium.html.
+
+As bibliotecas node-datachannel, libdatachannel e libjuice são distribuídas com
+os avisos MPL 2.0. O código-fonte original, disponível sob a MPL 2.0, pode ser
+obtido nos seguintes endereços. O Meshy não altera esses componentes:
+https://github.com/murat-dogan/node-datachannel/tree/v0.32.3
+https://github.com/paullouisageneau/libdatachannel/tree/v0.24.2
+https://github.com/paullouisageneau/libjuice/tree/5948a4162d37bc213d6051b67ee2876ccc5a99a6
+
+As revisões das dependências nativas abaixo correspondem às fontes selecionadas
+pelo CMake e submódulos de libdatachannel 0.24.2 usado por node-datachannel 0.32.3.
+O prebuild Windows x64 deste candidato identifica OpenSSL 3.6.2.
+Os avisos dessas bibliotecas estão incluídos abaixo.

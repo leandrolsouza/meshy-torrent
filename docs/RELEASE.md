@@ -24,7 +24,7 @@ npm run dist:win
 ```
 
 `dist:win` compila as fontes, prepara o ícone, recompila dependências nativas,
-gera o instalador e calcula SHA-256. Pode precisar de rede para baixar Electron,
+gera os avisos de terceiros, o instalador e calcula SHA-256. Pode precisar de rede para baixar Electron,
 cabeçalhos e ferramentas do electron-builder. Não executa o instalador nem publica.
 
 Arquivos esperados para esta versão:
@@ -64,12 +64,12 @@ Preparação executada com Node.js 22.17.0 e Electron 44.7.0:
 - WebTorrent e `node-datachannel` importados com sucesso usando o executável
   empacotado em modo Node, sem abrir a interface nem acessar a sessão do usuário.
 - `npm run typecheck`: aprovado nos três projetos.
-- `npm test -- --runInBand`: 99 suítes e 1.595 testes aprovados, incluindo o
+- `npm test -- --runInBand`: 100 suítes e 1.599 testes aprovados, incluindo o
   atualizador e a regressão de restauração de metadados sem magnet original.
 - `npm run lint`: nenhum erro, com 297 avisos preexistentes; arquivos de código
   alterados também conferidos separadamente, sem erros.
 - Prettier dos arquivos alterados e `git diff --check`: aprovados.
-- YAML do workflow analisado localmente; execução no GitHub ainda pendente.
+- Workflow validado no GitHub no PR e, após o merge, na `main`, conforme os links abaixo.
 - Build isolado com `forceCodeSigning=true` rejeitado por ausência de certificado,
   confirmando a proteção do comando opcional `dist:win:signed`. O workflow da beta
   usa `dist:win` e permite candidatos sem assinatura também por tag.
@@ -98,28 +98,41 @@ e que o aplicativo está funcionando. O relato registra instalação e funcionam
 geral nesse ambiente; não comprova os cenários específicos do roteiro abaixo nem
 a instalação em máquina limpa.
 
+Posteriormente, ainda em 18/10/2026, o usuário confirmou a homologação em máquina
+limpa sem problemas, a revisão do PR #1 e seu merge. A aprovação manual em máquina
+limpa fica registrada a partir desse relato.
+
 ## Automação
 
 O workflow [Beta Windows x64](../.github/workflows/windows-beta.yml) verifica tipos,
 lint, testes, build e `qa:release` em PRs e pushes para `main`/`master`. Execuções
 manuais e tags `v*` geram o candidato sem exigir certificado. O workflow registra
 o estado Authenticode e guarda os arquivos da atualização e checksums por 14 dias,
-além das evidências de homologação. Não instala nem publica o candidato.
+além das evidências de homologação. A execução manual não publica o candidato;
+tags beta aprovadas seguem para o job de publicação descrito abaixo.
 Tags precisam corresponder à versão do manifesto, por exemplo `v0.1.0-beta.1`.
 
 A auditoria de produção roda em um job independente com `npm run security:audit`.
 Ela preserva o relatório bruto e rejeita alertas altos/críticos, exceto a cadeia
 exata coberta pela [avaliação de aplicabilidade](SECURITY_REVIEW.md), com versões,
-fontes e prazo fixados. Falha na auditoria impede a liberação pública. O workflow
-tem somente permissão de leitura do repositório e não cria GitHub Releases.
+fontes e prazo fixados. Falha na auditoria impede a liberação pública. Os jobs de
+validação têm somente leitura. Para tags beta, o job `release` recebe `contents: write`
+e publica a pré-release somente após Windows e auditoria aprovados. Ele baixa os
+artefatos daquela execução, confere SHA-256, cria o rascunho com os quatro arquivos
+e só então o torna público. Não sobrescreve um release já existente.
 
 A [execução 39144212334](https://github.com/leandrolsouza/meshy-torrent/actions/runs/39144212334),
 do commit `58d3f8e`, falhou no teste de symlink/junction e no comando bruto de auditoria.
 O teste simulava `lstat` comparando caminhos textualmente, sem considerar a
 canonicalização de `realpath` no Windows. Foi substituído por uma junction real
 em diretório temporário próprio, conferindo a rejeição e a preservação dos arquivos.
-A revisão atual da auditoria aplica a política restrita acima. Uma nova execução
-remota com essas correções ainda é necessária; o QA não chegou a rodar naquele job.
+A revisão atual da auditoria aplica a política restrita acima. A
+[execução do PR](https://github.com/leandrolsouza/meshy-torrent/actions/runs/39145319803)
+passou com as correções. Após o merge do
+[PR #1](https://github.com/leandrolsouza/meshy-torrent/pull/1), a
+[execução da main](https://github.com/leandrolsouza/meshy-torrent/actions/runs/39146700787)
+também passou no commit `4c0dc134f54a45331e1aa3badd9dc211ca8033b3`, incluindo testes,
+build, homologação automatizada e auditoria com a política restrita.
 
 O `format:check` global possui pendências preexistentes. A automação confere a
 formatação da infraestrutura de release; não afirma que todo o repositório está
@@ -130,6 +143,11 @@ formatado. Trate a dívida restante em alteração própria.
 Use uma VM Windows x64 sem Node.js, npm ou checkout do projeto. Registre versão do
 Windows, commit, hash do instalador, resultado e evidências para cada cenário.
 Use somente conteúdo de teste próprio ou autorizado.
+
+A homologação em máquina limpa desta beta foi aprovada pelo usuário em 18/10/2026.
+A lista abaixo fica como roteiro de referência; não representa um registro
+individualizado de execução de cada cenário. O atualizador assinado permanece fora
+do escopo da beta sem certificado.
 
 - [ ] Instalar sem privilégios de administrador, inclusive em caminho com espaços.
 - [ ] Abrir pelo atalho e confirmar nome, versão e ícone.
@@ -172,22 +190,42 @@ explícita dos caminhos usados e a exceção técnica temporária estão registr
 [SECURITY_REVIEW.md](SECURITY_REVIEW.md). Os quatro alertas permanecem visíveis no
 relatório bruto; a verificação restrita não os declara corrigidos.
 
-Também é necessário revisar os fluxos de IPC, abertura/exclusão de arquivos,
-metadados não confiáveis e privacidade dos logs antes da liberação pública.
+Os fluxos de IPC, abertura/exclusão de arquivos, metadados não confiáveis e logs
+continuam sujeitos às verificações específicas e à revisão em futuras alterações.
+
+## Avisos de terceiros
+
+Os comandos de distribuição geram `resources/THIRD_PARTY_NOTICES.txt` com os textos
+das dependências npm, atribuição dos ícones Codicons e avisos das bibliotecas nativas,
+incluindo endereços de código-fonte MPL. O hook de empacotamento valida o aviso,
+as licenças de Electron/Chromium e a versão OpenSSL do prebuild Windows.
+Fontes de coleções não usadas de react-icons não entram no ASAR; os ícones `vsc`
+utilizados continuam incorporados ao bundle. Veja o [registro de fontes e revisão](../third-party/README.md).
 
 ## Liberar a publicação
 
-- [ ] Tipos, testes, lint e build do commit candidato aprovados.
-- [ ] Workflow executado no GitHub e logs revisados.
+- [x] Tipos, testes, lint e build do commit candidato aprovados.
+- [x] Workflow executado no GitHub e falhas identificadas tratadas.
 - [x] Avaliação explícita registrada para o aviso de `ip`, com exceção restrita e prazo.
-- [ ] Auditoria do commit final aprovada dentro do prazo da avaliação.
-- [ ] Homologação em máquina limpa concluída com o instalador final.
-- [ ] Confirmar que a beta sem assinatura mantém a atualização manual.
-- [ ] Licença, autoria e avisos de terceiros conferidos no pacote final.
-- [ ] [Notas da versão](releases/0.1.0-beta.1.md) atualizadas com resultados reais.
+- [x] Auditoria do commit mesclado aprovada dentro do prazo da avaliação.
+- [x] Homologação em máquina limpa aprovada pelo usuário para o candidato testado.
+- [x] Confirmar que a beta sem assinatura mantém a atualização manual.
+- [x] Licença, autoria e avisos de terceiros conferidos no pacote Windows local.
+- [x] [Notas da versão](releases/0.1.0-beta.1.md) atualizadas com resultados reais.
 - [ ] Tag, commit e arquivos finais correspondem; checksums calculados após o build final.
 - [ ] Criar o GitHub Release como **pre-release** e anexar instalador, blockmap,
       `latest.yml` e `SHA256SUMS` da mesma execução.
+
+Os dois últimos itens são concluídos pelo workflow da tag. Para publicar esta beta,
+com o commit final verificado e enviado ao repositório:
+
+```sh
+git tag -a v0.1.0-beta.1 -m "Meshy 0.1.0-beta.1"
+git push origin v0.1.0-beta.1
+```
+
+Acompanhe Windows, auditoria e publicação no GitHub Actions. A versão publicada fica
+em [v0.1.0-beta.1](https://github.com/leandrolsouza/meshy-torrent/releases/tag/v0.1.0-beta.1).
 
 O atualizador está integrado, com instruções em [AUTO_UPDATES.md](AUTO_UPDATES.md).
 Enquanto não houver certificado, o candidato permanece com instalação manual e

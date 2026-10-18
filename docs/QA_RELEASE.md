@@ -61,9 +61,11 @@ do sistema é bloqueada no auxiliar; nenhuma associação é registrada. A rede 
 transferência fica restrita a peers locais, sem descoberta pública.
 
 Em 18/10/2026, a execução local com Electron 44.7.0 passou os dois cenários. A suíte
-Jest também passou: 99 suítes, 1.595 testes. O workflow Windows passou a executar
+Jest também passou: 100 suítes, 1.599 testes. O workflow Windows passou a executar
 `qa:release` e guardar apenas relatórios, capturas e logs por 14 dias; sua execução
-no GitHub ainda precisa ser confirmada.
+no GitHub passou no PR #1 e novamente na
+[main após o merge](https://github.com/leandrolsouza/meshy-torrent/actions/runs/39146700787),
+no commit `4c0dc134f54a45331e1aa3badd9dc211ca8033b3`.
 
 ## Confirmação manual do usuário
 
@@ -72,15 +74,20 @@ e que o aplicativo está funcionando. Essa confirmação é adicional aos testes
 automatizados e cobre instalação e funcionamento geral naquele ambiente. Não houve
 relato detalhado dos demais cenários do roteiro nem de uso de uma máquina limpa.
 
-## O que falta homologar
+Em confirmação posterior na mesma data, o usuário informou que concluiu a
+homologação em máquina limpa sem problemas e que revisou e mesclou o PR #1.
+A homologação manual em máquina limpa fica aprovada com base nesse relato.
+
+## Limites do auxiliar automatizado
 
 Este auxiliar não executa `main/index.ts` nem o instalador, não testa uma instalação
 em máquina limpa, atalhos, bandeja, associações do sistema, desinstalação, instalação
-por cima da beta ou entrega de atualização pelo GitHub. Esses cenários continuam
-no [roteiro de release](RELEASE.md).
+por cima da beta ou entrega de atualização pelo GitHub. A aprovação manual em
+máquina limpa foi informada separadamente pelo usuário; o roteiro de referência
+permanece em [RELEASE.md](RELEASE.md).
 
-Também faltam swarm público, recuperação de rede externa, disco cheio, permissões,
-concorrência e desempenho com vários torrents na execução desktop real. A engine
+O auxiliar também não cobre swarm público, recuperação de rede externa, disco cheio,
+permissões, concorrência e desempenho com vários torrents na execução desktop real. A engine
 atual encerra as conexões ao concluir (`main/torrentEngine.ts`, listener `done`);
 o seeder usado pelo auxiliar é outro cliente WebTorrent. Portanto, o resultado
 não comprova upload/seeding contínuo pelo Meshy após a conclusão.

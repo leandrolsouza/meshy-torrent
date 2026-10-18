@@ -2,7 +2,11 @@
     "appId": "org.meshy.client",
     "productName": "Meshy",
     "directories": { "output": "dist" },
-    "files": ["out/**/*", "icon.png", "package.json", "LICENSE"],
+    "files": ["out/**/*", "icon.png", "package.json", "LICENSE", "!node_modules/react-icons/**/*"],
+    "extraResources": [
+        { "from": ".build-resources/THIRD_PARTY_NOTICES.txt", "to": "THIRD_PARTY_NOTICES.txt" }
+    ],
+    "afterPack": "scripts/verify-distribution.cjs",
     "asarUnpack": ["**/*.node"],
     "icon": ".build-resources/icon.png",
     "publish": [{ "provider": "github", "owner": "leandrolsouza", "repo": "meshy-torrent" }],

@@ -1,0 +1,114 @@
+[
+    {
+        "name": "block-iterator",
+        "version": "1.1.2",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/block-iterator/1.1.2",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "chunk-store-iterator",
+        "version": "1.0.4",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/chunk-store-iterator/1.0.4",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "compact2string",
+        "version": "1.4.1",
+        "declaredLicense": "BSD",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/compact2string/1.4.1",
+        "reason": "README da versão declara MIT; package.json antigo usa a designação genérica BSD. As duas declarações originais são preservadas."
+    },
+    {
+        "name": "cross-fetch-ponyfill",
+        "version": "1.0.3",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/cross-fetch-ponyfill/1.0.3",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "default-gateway",
+        "version": "7.2.2",
+        "declaredLicense": "BSD-2-Clause",
+        "terms": "BSD-2-Clause",
+        "source": "https://registry.npmjs.org/default-gateway/7.2.2",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "err-code",
+        "version": "3.0.1",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/err-code/3.0.1",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "fast-readable-async-iterator",
+        "version": "2.0.0",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/fast-readable-async-iterator/2.0.0",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "freelist",
+        "version": "1.0.3",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/freelist/1.0.3",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "lazy-val",
+        "version": "1.0.5",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/lazy-val/1.0.5",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "piece-length",
+        "version": "2.0.1",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/piece-length/2.0.1",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "random-access-file",
+        "version": "4.1.2",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/random-access-file/4.1.2",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "throughput",
+        "version": "1.0.2",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/throughput/1.0.2",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "uint8-util",
+        "version": "2.3.2",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/uint8-util/2.3.2",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    },
+    {
+        "name": "webrtc-polyfill",
+        "version": "1.2.2",
+        "declaredLicense": "MIT",
+        "terms": "MIT",
+        "source": "https://registry.npmjs.org/webrtc-polyfill/1.2.2",
+        "reason": "O pacote declara a licença no manifesto, mas não inclui arquivo dedicado. Preservar autoria e README originais e acrescentar o texto padrão da licença declarada."
+    }
+]

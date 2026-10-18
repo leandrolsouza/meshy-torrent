@@ -63,6 +63,11 @@ pacotes sem editor configurado mantêm o atualizador desabilitado. Veja `docs/AU
 em perfil isolado; `npm run qa:transfer` executa somente a transferência. Auxiliares
 ficam em `scripts/qa/` e evidências em `.build-resources/qa/`, fora das suítes Jest.
 Esses cenários não instalam o app nem substituem a homologação em máquina limpa.
+`npm run release:notices` gera os avisos de terceiros antes do empacotamento;
+fontes e complementos revisados ficam em `third-party/`. Não reformate os textos
+originais de licença. O hook de distribuição confere sua inclusão no pacote Windows.
+O workflow publica tags `v*-beta.*` como pré-release somente após Windows e auditoria
+aprovados; o job de publicação tem `contents: write`, os demais mantêm somente leitura.
 `npm run security:audit` preserva o relatório bruto de produção e aplica a avaliação
 restrita de `security/audit-policy.json`, documentada em `docs/SECURITY_REVIEW.md`.
 Mudanças nas dependências avaliadas exigem rever a evidência, sem ampliar a exceção

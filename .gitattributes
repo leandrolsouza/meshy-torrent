@@ -1,0 +1,2 @@
+# Preservar espaços e quebras originais dos textos de licença de terceiros.
+third-party/licenses/*.txt -whitespace

@@ -100,8 +100,10 @@ rejeita manifesto com versão ou hash incompatíveis e calcula SHA-256 de instal
 blockmap e manifesto. Use todos os arquivos da mesma execução assinada; assinar ou
 alterar o instalador depois de gerar `latest.yml` invalida os metadados.
 
-O workflow prepara artefatos e não cria nem publica GitHub Releases. SHA-256 é um
-controle adicional de integridade; não substitui assinatura e identidade do editor.
+O workflow publica tags beta como pré-releases após os jobs Windows e auditoria
+aprovados, usando os quatro artefatos daquela execução e conferindo SHA-256 antes
+de tornar o release público. A beta atual continua sem assinatura e com atualização
+manual. SHA-256 não substitui assinatura e identidade do editor.
 
 ## Homologar a atualização
 
