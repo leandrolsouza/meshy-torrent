@@ -147,7 +147,8 @@ try {
             assert.equal(state.settings.data.theme, theme);
             assert.equal(state.downloads.success, true);
             assert.deepEqual(state.downloads.data, []);
-            assert.equal(state.update.data.disabledReason, 'unsigned');
+            assert.equal(state.update.data.phase, 'idle');
+            assert.equal(state.update.data.disabledReason, undefined);
             assert.equal(state.update.data.currentVersion, version);
             assert.equal(state.theme, theme);
             assert.equal(

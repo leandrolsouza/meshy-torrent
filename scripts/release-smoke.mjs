@@ -32,19 +32,21 @@ await build({
         },
     },
 });
-const result = spawnSync(electron, [join(output, 'transfer.mjs'), run], {
-    cwd: root,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', MESHY_QA_ROOT: run },
-    encoding: 'utf8',
-    timeout: 120_000,
-    windowsHide: true,
-});
-writeFileSync(join(run, 'transfer.log'), `${result.stdout ?? ''}\n${result.stderr ?? ''}`);
-if (result.error || result.status !== 0) {
-    console.error(result.stdout, result.stderr, result.error?.message ?? '');
-    throw new Error(`Falha na transferência real; evidências em ${run}`);
+if (!process.argv.includes('--renderer-only')) {
+    const result = spawnSync(electron, [join(output, 'transfer.mjs'), run], {
+        cwd: root,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', MESHY_QA_ROOT: run },
+        encoding: 'utf8',
+        timeout: 120_000,
+        windowsHide: true,
+    });
+    writeFileSync(join(run, 'transfer.log'), `${result.stdout ?? ''}\n${result.stderr ?? ''}`);
+    if (result.error || result.status !== 0) {
+        console.error(result.stdout, result.stderr, result.error?.message ?? '');
+        throw new Error(`Falha na transferência real; evidências em ${run}`);
+    }
+    console.log(result.stdout.trim());
 }
-console.log(result.stdout.trim());
 if (!process.argv.includes('--transfer-only')) {
     const env = { ...process.env, MESHY_QA_ROOT: run, MESHY_QA_WORKSPACE: root };
     delete env.ELECTRON_RUN_AS_NODE;

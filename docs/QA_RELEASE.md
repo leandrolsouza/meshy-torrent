@@ -14,6 +14,13 @@ a transferência, sem compilar o renderer nem abrir uma janela Electron:
 npm run qa:transfer
 ```
 
+Para executar só a interface Electron de produção, depois do build principal:
+
+```sh
+npm run build
+node scripts/release-smoke.mjs --renderer-only
+```
+
 São usados o runtime Electron e os serviços reais do main. Não há mocks de
 WebTorrent, engine ou download manager. A transferência usa um adaptador simples
 de persistência JSON em disco; a interface usa ElectronStore real e o preload e
@@ -94,6 +101,7 @@ não comprova upload/seeding contínuo pelo Meshy após a conclusão.
 
 Os quatro alertas altos de dependências receberam uma
 [avaliação de aplicabilidade com prazo](SECURITY_REVIEW.md), sem remover os alertas
-do relatório bruto. A beta permanece sem assinatura e com
-atualização manual por decisão do projeto; a homologação automática do atualizador
-assinado fica para quando houver certificado.
+do relatório bruto. A beta permanece sem assinatura; builds Windows x64 consultam
+o feed oficial e conferem SHA-512, sem validar identidade Authenticode. O smoke test
+da interface confirma o controle ativo e as mensagens nos dois idiomas, mas não
+baixa uma versão real do GitHub nem executa a atualização.
