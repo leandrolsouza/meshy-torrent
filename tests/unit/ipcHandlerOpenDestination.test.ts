@@ -1,3 +1,8 @@
+// Os testes de payload usam um renderer autorizado; o remetente é coberto em ipcSecurity.
+jest.mock('../../main/rendererSecurity', () => ({
+    isTrustedIpcSender: jest.fn(() => true),
+}));
+
 /**
  * Testes unitários para os handlers IPC `torrent:open-folder` e `torrent:open-file`.
  *
@@ -25,6 +30,7 @@ jest.mock('electron', () => ({
         showOpenDialog: jest.fn(),
     },
     shell: {
+        showItemInFolder: jest.fn(),
         openPath: (...args: unknown[]) => mockShellOpenPath(...(args as [string])),
     },
     BrowserWindow: jest.fn().mockImplementation(() => ({
@@ -41,6 +47,7 @@ const mockExistsSync = jest.fn<boolean, [string]>();
 jest.mock('fs', () => ({
     existsSync: (...args: unknown[]) => mockExistsSync(...(args as [string])),
     accessSync: jest.fn(),
+    statSync: jest.fn(() => ({ isDirectory: () => true })),
     readFileSync: jest.fn(),
     constants: { W_OK: 2 },
 }));

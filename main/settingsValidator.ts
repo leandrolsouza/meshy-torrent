@@ -10,6 +10,7 @@ import {
     isValidMaxConcurrentDownloads,
     isValidThemeId,
     isValidNetworkToggle,
+    isValidTrackerUrl,
 } from './validators';
 import { ErrorCodes } from '../shared/errorCodes';
 
@@ -23,9 +24,21 @@ interface SettingsFieldRule {
 
 /**
  * Mapa de regras de validação para cada campo de AppSettings.
- * Campos não listados aqui não são validados (ex: globalTrackers, autoApplyGlobalTrackers).
+ * Toda chave do contrato deve ter uma regra de validação.
  */
-const settingsRules: Record<string, SettingsFieldRule> = {
+const settingsRules = {
+    globalTrackers: {
+        validate: (value) =>
+            Array.isArray(value) &&
+            Array.from(value).every(
+                (url: unknown) => typeof url === 'string' && isValidTrackerUrl(url),
+            ),
+        errorCode: ErrorCodes.INVALID_TRACKER_URL,
+    },
+    autoApplyGlobalTrackers: {
+        validate: (value) => typeof value === 'boolean',
+        errorCode: ErrorCodes.INVALID_PARAMS,
+    },
     bandwidth: { validate: isValidBandwidthSettings, errorCode: ErrorCodes.INVALID_PARAMS },
     closeToTray: {
         validate: (value) => typeof value === 'boolean',
@@ -71,7 +84,7 @@ const settingsRules: Record<string, SettingsFieldRule> = {
         validate: isValidNetworkToggle,
         errorCode: ErrorCodes.INVALID_PARAMS,
     },
-};
+} satisfies Record<keyof AppSettings, SettingsFieldRule>;
 
 /**
  * Valida um payload Partial<AppSettings>.

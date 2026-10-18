@@ -43,20 +43,20 @@ export type ValidationResult<T> = { valid: true; data: T } | { valid: false };
  * const { infoHash } = result.data;
  */
 export function validatePayload<T>(payload: unknown, schema: PayloadSchema): ValidationResult<T> {
-    if (typeof payload !== 'object' || payload === null) {
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
         return { valid: false };
     }
 
     const obj = payload as Record<string, unknown>;
 
     for (const [key, rule] of Object.entries(schema)) {
+        if (!Object.prototype.hasOwnProperty.call(obj, key)) return { valid: false };
         const value = obj[key];
 
         // Verificar tipo
         if (typeof value !== rule.type) {
             return { valid: false };
         }
-
         // Verificar string não-vazia
         if (rule.nonEmpty && rule.type === 'string' && (value as string) === '') {
             return { valid: false };
@@ -83,7 +83,11 @@ const INFO_HASH_HEX_REGEX = /^[0-9a-fA-F]{40}$/;
 
 /** Schema para payloads que contêm { infoHash: string } com validação de 40 hex chars */
 export const infoHashHexSchema: PayloadSchema = {
-    infoHash: { type: 'string', nonEmpty: true, validate: (v) => INFO_HASH_HEX_REGEX.test(v as string) },
+    infoHash: {
+        type: 'string',
+        nonEmpty: true,
+        validate: (v) => INFO_HASH_HEX_REGEX.test(v as string),
+    },
 };
 
 /** Schema para payloads que contêm { infoHash: string, url: string } */

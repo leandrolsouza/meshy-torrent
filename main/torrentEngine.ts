@@ -1,9 +1,11 @@
 import { EventEmitter } from 'events';
-import { readFile, rm, readdir } from 'fs/promises';
+import { rm, readdir } from 'fs/promises';
+import { readTorrentFile } from './torrentInput';
 import { join, basename } from 'path';
 import WebTorrent, { type TorrentOptions } from 'webtorrent';
 import type { Torrent } from 'webtorrent';
-import { isValidMagnetUri, hasTorrentMagicBytes } from './validators';
+import { isValidMagnetUri, hasTorrentMagicBytes, MAX_TORRENT_BYTES } from './validators';
+import { ErrorCodes } from '../shared/errorCodes';
 import { isValidTrackerUrl, normalizeTrackerUrl } from '../shared/validators';
 import { logger } from './logger';
 import type {
@@ -230,8 +232,9 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         // Leitura assíncrona para não bloquear o event loop com arquivos grandes
         let buffer: Buffer;
         try {
-            buffer = await readFile(filePath);
+            buffer = await readTorrentFile(filePath);
         } catch (err) {
+            if (err instanceof Error && err.message === ErrorCodes.INVALID_FILE_PATH) throw err;
             // Usar basename para evitar vazar o caminho completo no log/mensagem de erro
             const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
             logger.error('[TorrentEngine] Falha ao ler arquivo torrent:', basename(filePath), code);
@@ -252,6 +255,8 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         paused = false,
         options?: TorrentAddOptions,
     ): Promise<TorrentInfo> {
+        if (buffer.length > MAX_TORRENT_BYTES)
+            return Promise.reject(new Error(ErrorCodes.INVALID_FILE_PATH));
         if (!hasTorrentMagicBytes(buffer)) {
             return Promise.reject(new Error('Arquivo inválido: não é um arquivo .torrent válido'));
         }

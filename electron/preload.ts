@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { MAX_TORRENT_BYTES } from '../shared/validators';
+import { ErrorCodes } from '../shared/errorCodes';
 import type {
     DownloadItem,
     AppSettings,
@@ -35,8 +37,11 @@ const meshyAPI: MeshyAPI = {
         ipcRenderer.on('app:external-torrents', listener);
         return () => ipcRenderer.removeListener('app:external-torrents', listener);
     },
-    prepareTorrent: (requestId, source) =>
-        ipcRenderer.invoke('torrent:prepare', { requestId, source }),
+    prepareTorrent: (requestId, source) => {
+        if (source?.kind === 'buffer' && source.buffer?.byteLength > MAX_TORRENT_BYTES)
+            return Promise.resolve({ success: false, error: ErrorCodes.INVALID_FILE_PATH });
+        return ipcRenderer.invoke('torrent:prepare', { requestId, source });
+    },
     cancelTorrentPreparation: (requestId) =>
         ipcRenderer.invoke('torrent:cancel-preparation', { requestId }),
     getDiskSpace: (requestId, destinationFolder, selectedIndices) =>
@@ -50,6 +55,9 @@ const meshyAPI: MeshyAPI = {
     },
 
     addTorrentFileBuffer(buffer: Uint8Array): Promise<IPCResponse<DownloadItem>> {
+        // Evita copiar entradas grandes para o main; o handler também valida o limite.
+        if (buffer?.byteLength > MAX_TORRENT_BYTES)
+            return Promise.resolve({ success: false, error: ErrorCodes.INVALID_FILE_PATH });
         return ipcRenderer.invoke('torrent:add-file-buffer', { buffer });
     },
 

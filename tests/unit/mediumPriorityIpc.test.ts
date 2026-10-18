@@ -1,3 +1,8 @@
+// Os testes de payload usam um renderer autorizado; o remetente é coberto em ipcSecurity.
+jest.mock('../../main/rendererSecurity', () => ({
+    isTrustedIpcSender: jest.fn(() => true),
+}));
+
 import { ipcMain, dialog } from 'electron';
 import { registerIpcHandlers, _rateLimiter } from '../../main/ipcHandler';
 import { createDefaultBandwidthSettings } from '../../shared/bandwidth';

@@ -1,4 +1,4 @@
-import { readFile, stat } from 'fs/promises';
+import { readTorrentFile } from './torrentInput';
 import WebTorrent from 'webtorrent';
 import type { Torrent, TorrentOptions } from 'webtorrent';
 import type { AppSettings, TorrentPreview, TorrentSource } from '../shared/types';
@@ -98,14 +98,13 @@ export function createTorrentPreparation(
                     input = source.magnetUri;
                 } else {
                     if (source.kind === 'file') {
-                        if (
-                            !isValidTorrentFile(source.filePath) ||
-                            (await stat(source.filePath)).size > MAX_TORRENT_BYTES
-                        ) {
+                        if (!isValidTorrentFile(source.filePath)) {
                             throw new Error(ErrorCodes.INVALID_FILE_PATH);
                         }
-                        input = await readFile(source.filePath);
+                        input = await readTorrentFile(source.filePath);
                     } else {
+                        if (source.buffer.byteLength > MAX_TORRENT_BYTES)
+                            throw new Error(ErrorCodes.INVALID_FILE_PATH);
                         input = Buffer.from(source.buffer);
                     }
                     if (input.length > MAX_TORRENT_BYTES || !hasTorrentMagicBytes(input)) {

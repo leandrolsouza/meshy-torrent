@@ -1,3 +1,8 @@
+// Os testes de payload usam um renderer autorizado; o remetente é coberto em ipcSecurity.
+jest.mock('../../main/rendererSecurity', () => ({
+    isTrustedIpcSender: jest.fn(() => true),
+}));
+
 /**
  * Testes de propriedade (PBT) para os handlers IPC `torrent:open-folder` e `torrent:open-file`.
  *
@@ -25,6 +30,7 @@ import type { DownloadItem, TorrentFileInfo, TorrentStatus } from '../../shared/
 // ─── Mock electron ────────────────────────────────────────────────────────────
 
 const mockShellOpenPath = jest.fn<Promise<string>, [string]>();
+const mockShowItemInFolder = jest.fn();
 
 jest.mock('electron', () => ({
     ipcMain: {
@@ -35,6 +41,7 @@ jest.mock('electron', () => ({
     },
     shell: {
         openPath: (...args: unknown[]) => mockShellOpenPath(...(args as [string])),
+        showItemInFolder: (...args: unknown[]) => mockShowItemInFolder(...args),
     },
     BrowserWindow: jest.fn().mockImplementation(() => ({
         webContents: { send: jest.fn() },
@@ -50,6 +57,7 @@ const mockExistsSync = jest.fn<boolean, [string]>();
 jest.mock('fs', () => ({
     existsSync: (...args: unknown[]) => mockExistsSync(...(args as [string])),
     accessSync: jest.fn(),
+    statSync: jest.fn(() => ({ isDirectory: () => true })),
     readFileSync: jest.fn(),
     constants: { W_OK: 2 },
 }));
@@ -282,8 +290,8 @@ describe('Property-Based Tests: open-destination IPC handlers', () => {
          * Validates: Requirements 2.1, 2.2
          *
          * Para qualquer infoHash válido, destinationFolder e file.path de um
-         * torrent concluído com arquivo selecionado, shell.openPath é chamado
-         * com path.join(destinationFolder, file.path).
+         * torrent concluído com arquivo selecionado, o caminho resolvido é
+         * aberto se tiver formato permitido ou revelado no gerenciador de arquivos.
          */
         await fc.assert(
             fc.asyncProperty(
@@ -315,7 +323,13 @@ describe('Property-Based Tests: open-destination IPC handlers', () => {
                     const expectedPath = path.resolve(destinationFolder, filePath);
 
                     expect(response.success).toBe(true);
-                    expect(mockShellOpenPath).toHaveBeenCalledWith(expectedPath);
+                    if (['.mp4'].includes(path.extname(filePath).toLowerCase())) {
+                        expect(mockShellOpenPath).toHaveBeenCalledWith(expectedPath);
+                        expect(mockShowItemInFolder).not.toHaveBeenCalled();
+                    } else {
+                        expect(mockShowItemInFolder).toHaveBeenCalledWith(expectedPath);
+                        expect(mockShellOpenPath).not.toHaveBeenCalled();
+                    }
                 },
             ),
             { numRuns: 100 },

@@ -1,3 +1,7 @@
+jest.mock('../../main/torrentInput', () => ({
+    readTorrentFile: (filePath: string) => require('fs/promises').readFile(filePath),
+}));
+
 /**
  * Example-based (non-PBT) tests for TorrentEngine.
  *
@@ -27,6 +31,8 @@ import { createTorrentEngine } from '../../main/torrentEngine';
 import type WebTorrent from 'webtorrent';
 import type { Torrent } from 'webtorrent';
 import { EventEmitter } from 'events';
+import { MAX_TORRENT_BYTES } from '../../shared/validators';
+import { ErrorCodes } from '../../shared/errorCodes';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +99,14 @@ const DEFAULT_OPTIONS = {
     pexEnabled: true,
     utpEnabled: true,
 };
+
+test('rejeita buffer acima do limite antes de alcançar WebTorrent', async () => {
+    const client = makeMockClient();
+    const engine = createTorrentEngine(DEFAULT_OPTIONS, client);
+    const buffer = Buffer.alloc(MAX_TORRENT_BYTES + 1, 100);
+    await expect(engine.addTorrentBuffer(buffer)).rejects.toThrow(ErrorCodes.INVALID_FILE_PATH);
+    expect(client.add).not.toHaveBeenCalled();
+});
 
 // ─── Pause timeout (Requirement 4.6) ─────────────────────────────────────────
 

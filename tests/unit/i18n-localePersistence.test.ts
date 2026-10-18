@@ -1,3 +1,8 @@
+// Os testes de payload usam um renderer autorizado; o remetente é coberto em ipcSecurity.
+jest.mock('../../main/rendererSecurity', () => ({
+    isTrustedIpcSender: jest.fn(() => true),
+}));
+
 import fc from 'fast-check';
 import { createSettingsManager, SettingsStore } from '../../main/settingsManager';
 import { registerIpcHandlers } from '../../main/ipcHandler';

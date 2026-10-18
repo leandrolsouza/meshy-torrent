@@ -1,3 +1,7 @@
+jest.mock('../../main/torrentInput', () => ({
+    readTorrentFile: (filePath: string) => require('fs/promises').readFile(filePath),
+}));
+
 /**
  * Testes unitários para confirmar anonimização nos logs.
  *

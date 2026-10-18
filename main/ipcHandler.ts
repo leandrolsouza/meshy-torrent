@@ -1,5 +1,5 @@
 import { ipcMain, dialog, shell, BrowserWindow } from 'electron';
-import { existsSync, accessSync, constants as fsConstants } from 'fs';
+import { existsSync, accessSync, statSync, constants as fsConstants } from 'fs';
 import { resolve, basename } from 'path';
 import type { DownloadManager } from './downloadManager';
 import type { SettingsManager } from './settingsManager';
@@ -40,6 +40,8 @@ import type { TorrentPreparation } from './torrentPreparation';
 import type { TorrentSource } from '../shared/types';
 import type { ExternalTorrentInbox } from './externalTorrents';
 import { resolveTorrentFile } from './torrentFiles';
+import { isTrustedIpcSender } from './rendererSecurity';
+import { canOpenDownloadedFile } from './fileOpening';
 
 export type { IPCResponse } from '../shared/types';
 
@@ -283,6 +285,7 @@ export function registerIpcHandlers(
         handler: (event: Electron.IpcMainInvokeEvent, payload: unknown) => Promise<IPCResponse<T>>,
     ): void => {
         ipcMain.handle(channel, async (event, payload) => {
+            if (!isTrustedIpcSender(event)) return fail(ErrorCodes.INVALID_PARAMS);
             const cid = generateCorrelationId();
             if (!rateLimiter.tryConsume(channel)) {
                 logger.warn(`[IPC] Rate limit excedido para canal: ${channel} cid=${cid}`);
@@ -607,7 +610,7 @@ export function registerIpcHandlers(
                 if (!result.valid) return fail(ErrorCodes.INVALID_FILE_PATH);
 
                 // Resolver o caminho antes de qualquer validação ou uso.
-                // Normaliza separadores, expande '..', e previne path traversal.
+                // Normaliza separadores e resolve componentes relativos como '..'.
                 const filePath = resolve(result.data.filePath);
 
                 // Validar extensão .torrent antes de ler o arquivo do filesystem
@@ -654,6 +657,13 @@ export function registerIpcHandlers(
                 }
 
                 const raw = (payload as Record<string, unknown>).buffer;
+
+                if (
+                    !(raw instanceof Uint8Array || raw instanceof ArrayBuffer) ||
+                    raw.byteLength === 0 ||
+                    raw.byteLength > MAX_TORRENT_BYTES
+                )
+                    return fail(ErrorCodes.INVALID_FILE_PATH);
 
                 // O IPC do Electron serializa Uint8Array como objeto com dados numéricos.
                 // Aceitar Buffer, Uint8Array, ou ArrayBuffer.
@@ -812,7 +822,7 @@ export function registerIpcHandlers(
         async (_event, payload: unknown): Promise<IPCResponse<AppSettings>> => {
             try {
                 if (torrentEngine?.isRestarting()) return fail(ErrorCodes.ENGINE_RESTARTING);
-                if (typeof payload !== 'object' || payload === null) {
+                if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
                     return fail(ErrorCodes.INVALID_SETTINGS_PAYLOAD);
                 }
 
@@ -827,7 +837,7 @@ export function registerIpcHandlers(
                 // Validar que a pasta de destino existe e tem permissão de escrita
                 if (partial.destinationFolder !== undefined) {
                     // Resolver o caminho antes de validar (normaliza separadores, expande
-                    // '..', e previne path traversal). O caminho resolvido é também
+                    // '..'). O caminho resolvido é também
                     // persistido para evitar caminhos relativos em configurações salvas.
                     const resolvedFolder = resolve(partial.destinationFolder);
                     if (!existsSync(resolvedFolder) || !hasWritePermission(resolvedFolder)) {
@@ -1271,7 +1281,10 @@ export function registerIpcHandlers(
                 }
 
                 // Verificar se a pasta de destino existe
-                if (!existsSync(item.destinationFolder)) {
+                if (
+                    !existsSync(item.destinationFolder) ||
+                    !statSync(item.destinationFolder).isDirectory()
+                ) {
                     return fail(ErrorCodes.DESTINATION_FOLDER_NOT_FOUND);
                 }
 
@@ -1341,6 +1354,12 @@ export function registerIpcHandlers(
                 // Verificar se o arquivo existe
                 if (!existsSync(fullPath)) {
                     return fail(ErrorCodes.DESTINATION_FILE_NOT_FOUND);
+                }
+
+                // Executáveis, scripts e formatos desconhecidos exigem ação no SO.
+                if (!canOpenDownloadedFile(fullPath)) {
+                    shell.showItemInFolder(fullPath);
+                    return ok(undefined);
                 }
 
                 // Abrir o arquivo no aplicativo padrão do SO

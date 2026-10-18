@@ -1,5 +1,7 @@
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
+import { isAllowedRendererUrl, rendererSecurity } from './rendererSecurity';
 import { createSettingsManager } from './settingsManager';
 import { createTorrentEngine } from './torrentEngine';
 import { createDownloadManager } from './downloadManager';
@@ -128,6 +130,10 @@ function createMainWindow(): BrowserWindow {
     // Em dev, o Vite injeta scripts inline para HMR e precisa de connect-src
     // para WebSocket. Relaxamos a CSP apenas em dev.
     const isDev = !app.isPackaged;
+    const rendererFile = join(__dirname, '../renderer/index.html');
+    const developmentUrl = isDev ? process.env['ELECTRON_RENDERER_URL'] : undefined;
+    const rendererUrl = developmentUrl || pathToFileURL(rendererFile).href;
+    rendererSecurity.trustWindow(window, rendererUrl);
 
     window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
         const cspDirectives = isDev
@@ -138,6 +144,9 @@ function createMainWindow(): BrowserWindow {
                   "img-src 'self' data:",
                   "font-src 'self'",
                   "connect-src 'self' ws://localhost:*",
+                  "frame-src 'none'",
+                  "object-src 'none'",
+                  "base-uri 'none'",
               ]
             : [
                   "default-src 'self'",
@@ -146,6 +155,9 @@ function createMainWindow(): BrowserWindow {
                   "img-src 'self' data:",
                   "font-src 'self'",
                   "connect-src 'self'",
+                  "frame-src 'none'",
+                  "object-src 'none'",
+                  "base-uri 'none'",
               ];
 
         callback({
@@ -160,11 +172,17 @@ function createMainWindow(): BrowserWindow {
     // Bloqueia qualquer tentativa de navegar para URLs externas dentro da janela
     // principal. Impede que metadata malicioso de torrents redirecione o renderer.
     window.webContents.on('will-navigate', (event, url) => {
-        const isLocal = url.startsWith('file://') || url.startsWith('http://localhost');
-        if (!isLocal) {
+        if (!isAllowedRendererUrl(url, rendererUrl)) {
             event.preventDefault();
-            logger.warn('[Security] Navegação externa bloqueada:', url);
+            logger.warn('[Security] Navegação externa bloqueada');
         }
+    });
+    window.webContents.on('will-redirect', (event, url) => {
+        if (!isAllowedRendererUrl(url, rendererUrl)) event.preventDefault();
+    });
+    window.webContents.on('will-frame-navigate', (event) => {
+        if (!event.isMainFrame || !isAllowedRendererUrl(event.url, rendererUrl))
+            event.preventDefault();
     });
 
     // Bloqueia abertura de novas janelas (popups, target="_blank", window.open)
@@ -177,10 +195,10 @@ function createMainWindow(): BrowserWindow {
     // ELECTRON_RENDERER_URL só é respeitada em dev (app não empacotado).
     // Em produção, sempre carrega o arquivo local para evitar que uma env var
     // maliciosa redirecione o renderer para uma URL arbitrária.
-    if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-        window.loadURL(process.env['ELECTRON_RENDERER_URL']);
+    if (developmentUrl) {
+        window.loadURL(developmentUrl);
     } else {
-        window.loadFile(join(__dirname, '../renderer/index.html'));
+        window.loadFile(rendererFile);
     }
 
     return window;
