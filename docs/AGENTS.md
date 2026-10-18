@@ -4,6 +4,9 @@ Aplica-se a `docs/`, em complemento ao [guia da raiz](../AGENTS.md).
 
 - Escreva em português, com caminhos relativos à raiz, comandos copiáveis e
   links válidos. Evite caminhos absolutos específicos da máquina do autor.
+- Exceção: notas de novas versões em `docs/releases/` e textos dos GitHub Releases
+  devem ser escritos em inglês. Preserve as notas de versões já publicadas como
+  registro histórico, sem traduzi-las.
 - Baseie versões, scripts, arquitetura e comportamento em código/configurações.
   Diferencie dependências declaradas, versões resolvidas e sugestões futuras.
 - `MAINTENANCE.md` contém roteiros/prompts e um checklist de manutenção;

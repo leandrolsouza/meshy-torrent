@@ -1,5 +1,10 @@
 # Release beta do Meshy
 
+Escreva em inglês as notas de todas as próximas versões e os textos dos GitHub
+Releases. As notas já publicadas são registros históricos e não devem ser
+traduzidas. Use o [template de notas](releases/TEMPLATE.md) ao preparar uma nova
+versão.
+
 O próximo candidato é **0.1.0-beta.5 para Windows x64**, com instalador NSIS por
 usuário. macOS e Linux continuam configurados no electron-builder, mas precisam de
 homologação própria antes de serem anunciados como plataformas deste release.

@@ -33,6 +33,7 @@ import type { Torrent } from 'webtorrent';
 import { EventEmitter } from 'events';
 import { MAX_TORRENT_BYTES } from '../../shared/validators';
 import { ErrorCodes } from '../../shared/errorCodes';
+import { stopTorrentNetwork } from '../../main/webtorrentInternals';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1526,6 +1527,41 @@ describe('TorrentEngine.remove() — cobertura de todos os caminhos', () => {
         await engine.remove(infoHash, false);
 
         expect(destroyMock).toHaveBeenCalledWith({ destroyStore: false }, expect.any(Function));
+    });
+
+    it('aguarda o encerramento da descoberta antes de remover um torrent concluído', async () => {
+        const infoHash = 'ab'.repeat(20);
+        const discovery = {
+            destroyed: false,
+            destroy: jest.fn((callback: (err?: Error | null) => void) => {
+                if (discovery.destroyed) return;
+                discovery.destroyed = true;
+                setTimeout(() => callback(), 0);
+            }),
+        };
+        const fakeTorrent = makeFakeTorrent(infoHash, {
+            destroy: jest.fn((_opts: unknown, callback?: (err?: Error | null) => void) => {
+                const currentDiscovery = (
+                    fakeTorrent as unknown as { discovery?: typeof discovery }
+                ).discovery;
+                if (currentDiscovery) currentDiscovery.destroy(() => callback?.());
+                else callback?.();
+            }) as unknown as Torrent['destroy'],
+        });
+        (fakeTorrent as unknown as { discovery?: typeof discovery }).discovery = discovery;
+        (fakeTorrent as unknown as { wires: unknown[] }).wires = [];
+
+        const mockClient = makeMockClient();
+        mockClient.torrents.push(fakeTorrent);
+        const engine = createTorrentEngine(DEFAULT_OPTIONS, mockClient);
+
+        // Conclusão inicia o encerramento de rede em paralelo à ação do usuário.
+        const networkStop = stopTorrentNetwork(fakeTorrent);
+        const removal = engine.remove(infoHash, false);
+
+        await expect(removal).resolves.toBeUndefined();
+        await networkStop;
+        expect(discovery.destroy).toHaveBeenCalledTimes(1);
     });
 
     it('chama readdir e rm quando deleteFiles=true e a pasta está vazia', async () => {

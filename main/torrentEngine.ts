@@ -426,48 +426,56 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 
     // ── remove ──────────────────────────────────────────────────────────────────
 
-    remove(infoHash: string, deleteFiles: boolean): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const torrent = this._getTorrent(infoHash);
-            if (!torrent) {
-                // Already removed — treat as success
-                this.statusMap.delete(infoHash);
-                this.selectionMap.delete(infoHash);
-                return resolve();
-            }
+    async remove(infoHash: string, deleteFiles: boolean): Promise<void> {
+        const torrent = this._getTorrent(infoHash);
+        if (!torrent) {
+            // Already removed — treat as success
+            this.statusMap.delete(infoHash);
+            this.selectionMap.delete(infoHash);
+            return;
+        }
 
-            // Capturar o nome do torrent antes de destruir para limpar a pasta depois
-            const torrentName = torrent.name;
-            const torrentPath = torrent.path;
+        // Capturar o nome do torrent antes de destruir para limpar a pasta depois
+        const torrentName = torrent.name;
+        const torrentPath = torrent.path;
 
+        // Torrents concluídos já podem estar encerrando a descoberta de peers.
+        // Aguarde esse cleanup antes de destroy(): o discovery do WebTorrent
+        // ignora uma segunda chamada a destroy() sem invocar o callback, o que
+        // deixaria a remoção pendurada.
+        try {
+            await stopTorrentNetwork(torrent);
+        } catch (err) {
+            logger.warn(
+                '[TorrentEngine] Falha ao encerrar a rede antes de remover:',
+                infoHash.slice(0, 8),
+                err instanceof Error ? err.message : String(err),
+            );
+        }
+
+        await new Promise<void>((resolve, reject) => {
             torrent.destroy({ destroyStore: deleteFiles }, (err) => {
                 if (err) {
-                    return reject(err instanceof Error ? err : new Error(String(err)));
+                    reject(err instanceof Error ? err : new Error(String(err)));
+                    return;
                 }
                 this.statusMap.delete(infoHash);
                 this.selectionMap.delete(infoHash);
-
-                // Remover a pasta do torrent se ficou vazia após deletar os arquivos.
-                // O WebTorrent só apaga os arquivos, não a pasta que os contém.
-                if (deleteFiles && torrentName) {
-                    const torrentFolder = join(torrentPath, torrentName);
-                    readdir(torrentFolder)
-                        .then((entries) => {
-                            if (entries.length === 0) {
-                                return rm(torrentFolder, { recursive: true });
-                            }
-                            return undefined;
-                        })
-                        .catch(() => {
-                            // Pasta pode já não existir ou não ter permissão — ignorar
-                        })
-                        .finally(() => resolve());
-                    return;
-                }
-
                 resolve();
             });
         });
+
+        // Remover a pasta do torrent se ficou vazia após deletar os arquivos.
+        // O WebTorrent só apaga os arquivos, não a pasta que os contém.
+        if (deleteFiles && torrentName) {
+            const torrentFolder = join(torrentPath, torrentName);
+            try {
+                const entries = await readdir(torrentFolder);
+                if (entries.length === 0) await rm(torrentFolder, { recursive: true });
+            } catch {
+                // Pasta pode já não existir ou não ter permissão — ignorar
+            }
+        }
     }
 
     /** Fecha store e rede sem remover dados ou a pasta escolhida pelo usuário. */

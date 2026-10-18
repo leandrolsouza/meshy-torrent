@@ -64,7 +64,7 @@ export function ActionMenu({
                     role="group"
                     aria-label={label}
                     className={styles.popover}
-                    onClickCapture={(event) => {
+                    onClick={(event) => {
                         if (event.target instanceof Element && event.target.closest('button')) {
                             trigger.current?.focus();
                             setOpen(false);

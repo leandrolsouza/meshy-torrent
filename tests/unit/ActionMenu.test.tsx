@@ -22,18 +22,39 @@ test('abre por botão, foca a primeira ação disponível e Escape devolve foco'
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('ação fecha o popover e deixa foco na origem antes de abrir um diálogo', () => {
-    const focusAtAction = jest.fn();
+test('executa a ação antes de fechar o popover e permite abrir um diálogo', () => {
+    const onRemove = jest.fn();
     render(
         <ActionMenu label="Mais ações">
-            <button onClick={() => focusAtAction(document.activeElement)}>Remover</button>
+            <button onClick={onRemove}>Remover</button>
         </ActionMenu>,
     );
     const trigger = screen.getByRole('button', { name: 'Mais ações' });
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
-    expect(focusAtAction).toHaveBeenCalledWith(trigger);
+    expect(onRemove).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('group')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+});
+
+test('ação não é desmontada antes de abrir a confirmação', () => {
+    function Harness(): React.JSX.Element {
+        const [confirmOpen, setConfirmOpen] = React.useState(false);
+        return (
+            <>
+                <ActionMenu label="Mais ações">
+                    <button onClick={() => setConfirmOpen(true)}>Remover</button>
+                </ActionMenu>
+                {confirmOpen && <div role="dialog">Confirmar remoção</div>}
+            </>
+        );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mais ações' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
 });
 
 test('fecha ao clicar fora ou ao sair com teclado', () => {
