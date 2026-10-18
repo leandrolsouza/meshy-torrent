@@ -93,7 +93,7 @@ precisam ser instaladas manualmente uma vez para obter o atualizador habilitado.
 3. Confira `app-update.yml` no pacote: provedor, repositório e, se houver certificado,
    `publisherName`.
 4. Conclua a homologação, incluindo atualização entre duas versões da mesma linha.
-5. Crie a tag correspondente ao manifesto, como `v0.1.0-beta.3`.
+5. Crie a tag correspondente ao manifesto, como `v0.1.0-beta.4`.
 6. Anexe ao mesmo GitHub Release todos os arquivos:
     - `Meshy-<versão>-win-x64-setup.exe`
     - `Meshy-<versão>-win-x64-setup.exe.blockmap`

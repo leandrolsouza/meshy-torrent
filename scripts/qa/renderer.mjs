@@ -58,7 +58,7 @@ const manager = createDownloadManager(engine, settings, session, undefined, {
 const updates = createUpdateManager({
     driver: updater.autoUpdater,
     currentVersion: version,
-    disabledReason: 'unsigned',
+    disabledReason: undefined,
     publish: () => {},
     persistSession: () => manager.persistSession(),
     confirmInstall: async () => false,
@@ -125,9 +125,7 @@ try {
             settings.set({ theme, locale });
             await window.loadFile(file);
             await waitForUI(
-                locale === 'pt-BR'
-                    ? 'Atualizações automáticas exigem uma versão assinada'
-                    : 'Automatic updates require a signed build',
+                locale === 'pt-BR' ? 'Verificação automática ativa' : 'Automatic checks enabled',
             );
             // Aguarda a transição de cores de 300 ms e a pintura da interface.
             await new Promise((resolve) => setTimeout(resolve, 450));
