@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 describe('checksums do release Windows', () => {
     let directory: string;
     const script = resolve(__dirname, '../../scripts/release-checksums.cjs');
-    const installer = `${productName}-${version}-win-x64-setup.exe`;
+    const installer = `${productName.replace(/\s+/g, '-')}-${version}-win-x64-setup.exe`;
     const prepareAssets = (
         manifestVersion = version,
         sha512 = createHash('sha512').update('abc').digest('base64'),

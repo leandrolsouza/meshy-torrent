@@ -9,7 +9,7 @@ const { productName } = require('../electron-builder.json');
 
 async function main() {
     const directory = resolve(process.argv[2] || join(__dirname, '../dist'));
-    const fileName = `${productName}-${version}-win-x64-setup.exe`;
+    const fileName = `${productName.replace(/\s+/g, '-')}-${version}-win-x64-setup.exe`;
     const installer = join(directory, fileName);
     if (!(await stat(installer)).isFile()) {
         throw new Error(`Instalador indisponível: ${fileName}`);

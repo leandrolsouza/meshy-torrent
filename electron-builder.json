@@ -49,7 +49,7 @@
         "oneClick": false,
         "perMachine": false,
         "allowToChangeInstallationDirectory": true,
-        "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
+        "artifactName": "Meshy-Torrent-${version}-win-${arch}-setup.${ext}"
     },
     "mac": {
         "target": "dmg",

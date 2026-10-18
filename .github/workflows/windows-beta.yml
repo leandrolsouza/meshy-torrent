@@ -127,11 +127,12 @@ jobs:
               run: |
                   version="${RELEASE_TAG#v}"
                   product_name="$(node -p "require('./electron-builder.json').productName")"
+                  artifact_prefix="$(node -p "require('./electron-builder.json').productName.replace(/\s+/g, '-')")"
                   test -f "docs/releases/$version.md"
                   gh release create "$RELEASE_TAG" \
                     --verify-tag --draft --prerelease --latest=false \
                     --title "$product_name $version" --notes-file "docs/releases/$version.md" \
-                    "release-assets/$product_name-$version-win-x64-setup.exe" \
-                    "release-assets/$product_name-$version-win-x64-setup.exe.blockmap" \
+                    "release-assets/$artifact_prefix-$version-win-x64-setup.exe" \
+                    "release-assets/$artifact_prefix-$version-win-x64-setup.exe.blockmap" \
                     release-assets/latest.yml release-assets/SHA256SUMS
                   gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
