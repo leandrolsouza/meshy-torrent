@@ -76,6 +76,9 @@ const meshyAPI: MeshyAPI = {
         return ipcRenderer.invoke('torrent:add-magnet', { magnetUri });
     },
 
+    toggleSeed(infoHash: string): Promise<IPCResponse<DownloadItem>> {
+        return ipcRenderer.invoke('torrent:toggle-seed', { infoHash });
+    },
     pause(infoHash: string): Promise<IPCResponse<void>> {
         return ipcRenderer.invoke('torrent:pause', { infoHash });
     },

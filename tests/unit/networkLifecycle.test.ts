@@ -3,7 +3,11 @@ import type WebTorrent from 'webtorrent';
 import { createTorrentEngine } from '../../main/torrentEngine';
 import { createDownloadManager } from '../../main/downloadManager';
 import type { SettingsManager } from '../../main/settingsManager';
-import { MAX_TRACKERS_PER_TORRENT, configureTorrentNetwork } from '../../main/webtorrentInternals';
+import {
+    MAX_TRACKERS_PER_TORRENT,
+    configureTorrentNetwork,
+    resumeTorrentNetwork,
+} from '../../main/webtorrentInternals';
 import type { Torrent } from 'webtorrent';
 
 const mockClients: MockClient[] = [];
@@ -31,7 +35,7 @@ class MockTracker extends EventEmitter {
         });
     }
     destroy = jest.fn((cb) => {
-        this._trackers.forEach((tracker) => tracker.destroy(() => { }));
+        this._trackers.forEach((tracker) => tracker.destroy(() => {}));
         cb?.();
     });
 }
@@ -131,7 +135,7 @@ class MockClient extends EventEmitter {
     );
     destroy = jest.fn((cb: (err?: Error) => void) => {
         for (const torrent of [...this.torrents])
-            torrent.destroy({ destroyStore: false }, () => { });
+            torrent.destroy({ destroyStore: false }, () => {});
         cb();
     });
 }
@@ -289,7 +293,7 @@ test('tracker budget applies to embedded URLs before discovery and to manual add
     );
 });
 
-test('completion stops the previous torrent while advancing the queue', async () => {
+test('conclusão mantém a rede para seed e libera o slot de download', async () => {
     const { client, manager } = setup();
     await manager.addMagnetLink(magnet(hashOf(1)));
     await manager.addMagnetLink(magnet(hashOf(2)));
@@ -298,10 +302,11 @@ test('completion stops the previous torrent while advancing the queue', async ()
     first.resolveMetadata();
     first.emit('done');
     await Promise.resolve();
-    expect(first.paused).toBe(true);
+    expect(first.paused).toBe(false);
+    expect(first.discovery?.destroyed).toBe(false);
     expect(client.torrents).toHaveLength(2);
     expect(manager.getAll().find((item) => item.infoHash === first.infoHash)?.status).toBe(
-        'completed',
+        'seeding',
     );
 });
 
@@ -346,7 +351,7 @@ test('metadata timers are suspended during restart and rearmed for the replaceme
     await jest.advanceTimersByTimeAsync(50_000);
     let finishDestroy!: () => void;
     client.destroy.mockImplementation((cb) => {
-        for (const torrent of [...client.torrents]) torrent.destroy({}, () => { });
+        for (const torrent of [...client.torrents]) torrent.destroy({}, () => {});
         finishDestroy = cb;
     });
     const restarting = engine.restart(options);
@@ -410,4 +415,57 @@ test('connection budgets include pending attempts, and disconnection wakes queue
     const incoming = Object.assign(new EventEmitter(), { conn: {}, destroy: jest.fn() });
     second._registerPeer(incoming);
     expect(incoming.destroy).toHaveBeenCalledWith(expect.any(Error));
+});
+
+test('conclusão de dados verificados em torrent pausado aguarda discovery antes de anunciar', async () => {
+    const { client } = setup();
+    // Novo objeto para instalar os guards antes do primeiro ready, como na engine.
+    const fresh = new MockTorrent(hashOf(2), magnet(hashOf(2)), client) as MockTorrent & {
+        _checkDone: () => void;
+    };
+    fresh.paused = true;
+    fresh._checkDone = jest.fn(() => {
+        if (!fresh.discovery) throw new Error('discovery ausente');
+    });
+    const original = fresh._checkDone;
+    configureTorrentNetwork(fresh as unknown as Torrent, {
+        maxPerTorrent: 24,
+        maxTotal: 100,
+        torrents: () => [fresh as unknown as Torrent],
+    });
+    expect(() => fresh._checkDone()).not.toThrow();
+    expect(original).not.toHaveBeenCalled();
+    await resumeTorrentNetwork(fresh as unknown as Torrent);
+    expect(original).toHaveBeenCalledTimes(1);
+    expect(fresh.discovery).toBeDefined();
+});
+
+test('retomar seed rejeita dados incompletos antes de abrir a rede', async () => {
+    const { client, engine } = setup();
+    await engine.addMagnetLink(magnet(hashOf(1)), true);
+    const torrent = client.torrents[0];
+    torrent.resolveMetadata();
+    jest.spyOn(engine, 'getFiles').mockReturnValue([
+        { index: 0, name: 'a.bin', path: 'a.bin', length: 100, downloaded: 50, selected: true },
+    ]);
+    await expect(engine.resume(torrent.infoHash, true)).rejects.toThrow(
+        'error.files.sourceMissing',
+    );
+    expect(torrent.resume).not.toHaveBeenCalled();
+});
+
+test('arquivos completos alinhados a peças usam bitfield verificado ao retomar seed', async () => {
+    const { client, engine } = setup();
+    await engine.addMagnetLink(magnet(hashOf(1)), true);
+    const torrent = client.torrents[0];
+    Object.assign(torrent, {
+        ready: true,
+        pieceLength: 16384,
+        bitfield: { get: () => true },
+        files: [
+            { name: 'a.bin', path: 'a.bin', offset: 0, length: 16384, downloaded: 0, done: false },
+        ],
+    });
+    expect(engine.getFiles(torrent.infoHash)[0].downloaded).toBe(16384);
+    await expect(engine.resume(torrent.infoHash, true)).resolves.toBeUndefined();
 });

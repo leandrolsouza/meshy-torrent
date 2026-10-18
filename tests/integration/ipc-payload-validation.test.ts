@@ -100,6 +100,8 @@ function makeMockSettingsManager(): SettingsManager {
         downloadSpeedLimit: 0,
         uploadSpeedLimit: 0,
         maxConcurrentDownloads: 3,
+        seedingEnabled: false,
+        maxConcurrentSeeders: 2,
         notificationsEnabled: true,
         theme: 'vs-code-dark',
         locale: 'pt-BR',

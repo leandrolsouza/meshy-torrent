@@ -4,13 +4,7 @@
     "directories": {
         "output": "dist"
     },
-    "files": [
-        "out/**/*",
-        "icon.png",
-        "package.json",
-        "LICENSE",
-        "!node_modules/react-icons/**/*"
-    ],
+    "files": ["out/**/*", "icon.png", "package.json", "LICENSE", "!node_modules/react-icons/**/*"],
     "extraResources": [
         {
             "from": ".build-resources/THIRD_PARTY_NOTICES.txt",
@@ -18,9 +12,7 @@
         }
     ],
     "afterPack": "scripts/verify-distribution.cjs",
-    "asarUnpack": [
-        "**/*.node"
-    ],
+    "asarUnpack": ["**/*.node"],
     "icon": ".build-resources/icon.png",
     "publish": [
         {
@@ -32,9 +24,7 @@
     "protocols": [
         {
             "name": "BitTorrent magnet",
-            "schemes": [
-                "magnet"
-            ]
+            "schemes": ["magnet"]
         }
     ],
     "fileAssociations": [
@@ -50,9 +40,7 @@
         "target": [
             {
                 "target": "nsis",
-                "arch": [
-                    "x64"
-                ]
+                "arch": ["x64"]
             }
         ],
         "verifyUpdateCodeSignature": true
@@ -68,14 +56,8 @@
         "category": "public.app-category.utilities"
     },
     "linux": {
-        "target": [
-            "deb",
-            "AppImage"
-        ],
+        "target": ["deb", "AppImage"],
         "category": "Network",
-        "mimeTypes": [
-            "application/x-bittorrent",
-            "x-scheme-handler/magnet"
-        ]
+        "mimeTypes": ["application/x-bittorrent", "x-scheme-handler/magnet"]
     }
 }

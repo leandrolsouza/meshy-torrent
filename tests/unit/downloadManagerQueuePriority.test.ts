@@ -108,6 +108,8 @@ function makeMockSettings(folder = '/downloads'): SettingsManager {
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 1, // Limite baixo para forçar enfileiramento
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             globalTrackers: [],
             autoApplyGlobalTrackers: false,

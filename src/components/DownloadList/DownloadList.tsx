@@ -121,7 +121,7 @@ export const DownloadList = React.memo(function DownloadList({
 
     // Contagem de downloads concluídos (para o botão "Limpar concluídos")
     const completedCount = useMemo(
-        () => items.filter((i) => i.status === 'completed').length,
+        () => items.filter((i) => i.status === 'completed' || i.status === 'seeding').length,
         [items],
     );
 
@@ -225,7 +225,9 @@ export const DownloadList = React.memo(function DownloadList({
     // Limpa todos os downloads concluídos da lista
     const handleClearCompleted = useCallback(
         (deleteFiles: boolean) => {
-            const completedItems = items.filter((i) => i.status === 'completed');
+            const completedItems = items.filter(
+                (i) => i.status === 'completed' || i.status === 'seeding',
+            );
             const ops = completedItems.map((i) => remove(i.infoHash, deleteFiles));
             withBusy(Promise.all(ops));
         },

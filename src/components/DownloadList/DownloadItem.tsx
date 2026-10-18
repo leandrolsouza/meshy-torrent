@@ -27,6 +27,7 @@ import { FileSelector } from '../FileSelector/FileSelector';
 import { TrackerPanel } from '../TrackerPanel/TrackerPanel';
 import { DetailsPanel, isExpandable } from '../DownloadDetails/DetailsPanel';
 import styles from './DownloadItem.module.css';
+import { useDownloadStore } from '../../store/downloadStore';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ function formatTimeParts(ms: number): string | null {
 }
 
 function progressVariant(status: DownloadItemType['status']): 'default' | 'success' | 'error' {
-    if (status === 'completed') return 'success';
+    if (status === 'completed' || status === 'seeding') return 'success';
     if (status === 'error' || status === 'metadata-failed' || status === 'files-not-found')
         return 'error';
     return 'default';
@@ -62,6 +63,7 @@ const STATUS_LABEL_KEYS: Record<DownloadItemType['status'], string> = {
     downloading: 'downloads.statusLabel.downloading',
     paused: 'downloads.statusLabel.paused',
     completed: 'downloads.statusLabel.completed',
+    seeding: 'status.seeding',
     error: 'downloads.statusLabel.error',
     'metadata-failed': 'downloads.statusLabel.metadataFailed',
     'files-not-found': 'downloads.statusLabel.filesNotFound',
@@ -105,7 +107,7 @@ export const DownloadItem = React.memo(function DownloadItem({
 }: DownloadItemProps): React.JSX.Element {
     const intl = useIntl();
     const progressPercent = Math.round(item.progress * 100);
-    const isCompleted = item.status === 'completed';
+    const isCompleted = item.status === 'completed' || item.status === 'seeding';
     const isPaused = item.status === 'paused';
     const isWaiting = item.status === 'queued' || item.status === 'resolving-metadata';
     const isQueued = item.status === 'queued';
@@ -114,6 +116,7 @@ export const DownloadItem = React.memo(function DownloadItem({
 
     // ── Estado de operação em andamento (desabilita botões durante IPC) ──────
     const [isBusy, setIsBusy] = useState(false);
+    const [seedBusy, setSeedBusy] = useState(false);
 
     // Resetar busy quando o status muda (o main process confirmou a operação).
     // O setState condicional aqui é intencional: só dispara quando o status realmente muda,
@@ -212,7 +215,7 @@ export const DownloadItem = React.memo(function DownloadItem({
     // ── Atualizar progresso dos arquivos periodicamente enquanto baixando ─────
     const isActive = item.status === 'downloading' || item.status === 'resolving-metadata';
 
-    const cardClassName = `${styles.card}${item.status === 'downloading' ? ` ${styles.cardActive}` : ''}${isDragging ? ` ${styles.isDragging}` : ''}`;
+    const cardClassName = `${styles.card}${item.status === 'downloading' || item.status === 'seeding' ? ` ${styles.cardActive}` : ''}${isDragging ? ` ${styles.isDragging}` : ''}`;
 
     useEffect(() => {
         if (!expanded || !isActive || files.length === 0) return;
@@ -439,7 +442,7 @@ export const DownloadItem = React.memo(function DownloadItem({
                 {!isCompleted && !isPaused && !isWaiting && (
                     <SpeedDisplay speedBytesPerSec={item.downloadSpeed} icon={<VscArrowDown />} />
                 )}
-                {!isCompleted && !isPaused && !isWaiting && (
+                {(!isCompleted || item.status === 'seeding') && !isPaused && !isWaiting && (
                     <SpeedDisplay speedBytesPerSec={item.uploadSpeed} icon={<VscArrowUp />} />
                 )}
                 {!isCompleted && !isPaused && !isWaiting && (
@@ -552,11 +555,11 @@ export const DownloadItem = React.memo(function DownloadItem({
                     aria-label={
                         detailsExpanded
                             ? intl.formatMessage({
-                                id: 'downloads.actions.collapseDetailsAriaLabel',
-                            })
+                                  id: 'downloads.actions.collapseDetailsAriaLabel',
+                              })
                             : intl.formatMessage({
-                                id: 'downloads.actions.expandDetailsAriaLabel',
-                            })
+                                  id: 'downloads.actions.expandDetailsAriaLabel',
+                              })
                     }
                     aria-expanded={detailsExpanded}
                     disabled={!isExpandable(item.status)}
@@ -622,6 +625,39 @@ export const DownloadItem = React.memo(function DownloadItem({
                         <VscPlay /> {intl.formatMessage({ id: 'downloads.actions.resume' })}
                     </button>
                 )}
+                {(item.status === 'seeding' ||
+                    (item.status === 'completed' && item.seedingDisabled)) && (
+                    <button
+                        type="button"
+                        className="btn"
+                        disabled={isBusy || seedBusy || !!item.fileOperation}
+                        title={intl.formatMessage({
+                            id: item.status === 'seeding' ? 'action.stopSeed' : 'action.resumeSeed',
+                        })}
+                        onClick={async () => {
+                            if (isBusy || seedBusy) return;
+                            setSeedBusy(true);
+                            setActionError(null);
+                            try {
+                                const response = await window.meshy.toggleSeed(item.infoHash);
+                                if (response.success)
+                                    useDownloadStore.getState().updateItem(response.data);
+                                else setActionError(resolveErrorMessage(intl, response.error));
+                            } catch {
+                                setActionError(
+                                    intl.formatMessage({ id: 'error.operation.failed' }),
+                                );
+                            } finally {
+                                setSeedBusy(false);
+                            }
+                        }}
+                    >
+                        <VscArrowUp />{' '}
+                        {intl.formatMessage({
+                            id: item.status === 'seeding' ? 'action.stopSeed' : 'action.resumeSeed',
+                        })}
+                    </button>
+                )}
                 <ActionMenu
                     label={intl.formatMessage(
                         { id: 'downloads.actions.more' },
@@ -656,6 +692,10 @@ export const DownloadItem = React.memo(function DownloadItem({
             )}
             {filesDialogOpen && (
                 <ManageFilesDialog item={item} onClose={() => setFilesDialogOpen(false)} />
+            )}
+
+            {item.status === 'completed' && item.seedingDisabled && (
+                <p>{intl.formatMessage({ id: 'status.seedDisabled' })}</p>
             )}
 
             {/* Action error display (Task 5.3) */}

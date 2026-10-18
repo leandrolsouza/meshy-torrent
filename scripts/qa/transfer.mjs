@@ -172,7 +172,11 @@ try {
     );
     if (!current.client.listening) await once(current.client, 'listening');
     receiving.addPeer('127.0.0.1:' + current.client.torrentPort);
-    await waitUntil(() => receiving.done, 'Meshy Torrent enviar dados reais para novo peer', 20_000);
+    await waitUntil(
+        () => receiving.done,
+        'Meshy Torrent enviar dados reais para novo peer',
+        20_000,
+    );
     assert.equal(
         createHash('sha256')
             .update(readFileSync(join(uploadDestination, 'payload.bin')))

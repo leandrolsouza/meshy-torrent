@@ -66,6 +66,8 @@ export function SettingsPanel({
     const [dhtEnabled, setDhtEnabled] = useState(true);
     const [pexEnabled, setPexEnabled] = useState(true);
     const [utpEnabled, setUtpEnabled] = useState(true);
+    const [seedingEnabled, setSeedingEnabled] = useState(true);
+    const [maxConcurrentSeeders, setMaxConcurrentSeeders] = useState(2);
     const [isRestarting, setIsRestarting] = useState(false);
     const [restartError, setRestartError] = useState<string | null>(null);
 
@@ -82,6 +84,8 @@ export function SettingsPanel({
             setDhtEnabled(settings.dhtEnabled);
             setPexEnabled(settings.pexEnabled);
             setUtpEnabled(settings.utpEnabled);
+            setSeedingEnabled(settings.seedingEnabled);
+            setMaxConcurrentSeeders(settings.maxConcurrentSeeders);
             setBandwidth(settings.bandwidth ?? createDefaultBandwidthSettings());
             if (settings.theme) {
                 setCurrentThemeId(settings.theme);
@@ -182,6 +186,8 @@ export function SettingsPanel({
                     dhtEnabled,
                     pexEnabled,
                     utpEnabled,
+                    seedingEnabled,
+                    maxConcurrentSeeders,
                     bandwidth: {
                         ...bandwidth,
                         manualEnabled: current.data.bandwidth?.manualEnabled ?? false,
@@ -206,6 +212,8 @@ export function SettingsPanel({
             dhtEnabled,
             pexEnabled,
             utpEnabled,
+            seedingEnabled,
+            maxConcurrentSeeders,
             bandwidth,
             settings,
             error,
@@ -261,6 +269,10 @@ export function SettingsPanel({
             case 'network':
                 return (
                     <NetworkSettings
+                        seedingEnabled={seedingEnabled}
+                        maxConcurrentSeeders={maxConcurrentSeeders}
+                        onSeedingChange={setSeedingEnabled}
+                        onMaxSeedersChange={setMaxConcurrentSeeders}
                         dhtEnabled={dhtEnabled}
                         pexEnabled={pexEnabled}
                         utpEnabled={utpEnabled}

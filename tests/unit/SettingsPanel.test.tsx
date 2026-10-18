@@ -34,6 +34,8 @@ const defaultSettings = {
     downloadSpeedLimit: 0,
     uploadSpeedLimit: 0,
     maxConcurrentDownloads: 3,
+    seedingEnabled: false,
+    maxConcurrentSeeders: 2,
     notificationsEnabled: true,
     theme: 'vs-code-dark',
     globalTrackers: [],
@@ -71,8 +73,8 @@ const mockMeshy = {
     addTracker: jest.fn(),
     removeTracker: jest.fn(),
     applyGlobalTrackers: jest.fn(),
-    onProgress: jest.fn().mockReturnValue(() => { }),
-    onError: jest.fn().mockReturnValue(() => { }),
+    onProgress: jest.fn().mockReturnValue(() => {}),
+    onError: jest.fn().mockReturnValue(() => {}),
 };
 
 beforeAll(() => {

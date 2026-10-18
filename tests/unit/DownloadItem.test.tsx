@@ -164,10 +164,47 @@ describe('DownloadItem — remoção via ConfirmDialog', () => {
             const alerts = screen.queryAllByRole('alert');
             // pode haver role=alert de diskSpace — mas não deve conter mensagem de erro de engine
             alerts.forEach((alert) => {
-                expect(alert).not.toHaveTextContent(
-                    'Motor de torrents está reiniciando',
-                );
+                expect(alert).not.toHaveTextContent('Motor de torrents está reiniciando');
             });
         });
+    });
+});
+
+// As respostas confirmadas pelo main atualizam o store; erros permanecem visíveis.
+describe('DownloadItem — seeding', () => {
+    beforeEach(() => {
+        Object.defineProperty(window, 'meshy', {
+            configurable: true,
+            value: {
+                toggleSeed: jest
+                    .fn()
+                    .mockResolvedValue({ success: false, error: 'error.engine.restarting' }),
+            },
+        });
+    });
+    it('exibe status, upload e ação de parar seed', async () => {
+        renderWithIntl(
+            <DownloadItem
+                item={createItem({ status: 'seeding', progress: 1, uploadSpeed: 1024 })}
+                {...defaultProps}
+            />,
+        );
+        expect(screen.getByText('Seedando')).toBeInTheDocument();
+        expect(screen.getByText('1.00 KB/s')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Parar seed' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Motor de torrents está reiniciando',
+        );
+        expect(window.meshy.toggleSeed).toHaveBeenCalledWith(createItem().infoHash);
+    });
+    it('identifica seed desativado e oferece retomada', () => {
+        renderWithIntl(
+            <DownloadItem
+                item={createItem({ status: 'completed', seedingDisabled: true })}
+                {...defaultProps}
+            />,
+        );
+        expect(screen.getByText('Seed desativado')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Retomar seed' })).toBeEnabled();
     });
 });

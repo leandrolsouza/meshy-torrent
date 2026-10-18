@@ -45,6 +45,8 @@ const settings: AppSettings = {
     downloadSpeedLimit: 0,
     uploadSpeedLimit: 0,
     maxConcurrentDownloads: 3,
+    seedingEnabled: false,
+    maxConcurrentSeeders: 2,
     notificationsEnabled: true,
     theme: 'vs-code-dark',
     locale: 'pt-BR',
@@ -199,7 +201,7 @@ test('preferência de bandeja persiste via settings e registro de magnet é aç�
     );
     expect(update).toHaveBeenCalledWith({ closeToTray: true });
     expect(window.meshy.registerMagnetHandler).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir magnets com o Meshy' }));
+    fireEvent.click(screen.getByRole('button', { name: ptBR['settings.general.registerMagnet'] }));
     await screen.findByText(/outro aplicativo ainda está definido/);
     expect(window.meshy.registerMagnetHandler).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Escolher aplicativo padrão' }));
@@ -233,7 +235,7 @@ test('falha de registro permanece legível e não apresenta confirmação de suc
         </IntlProvider>
     );
     const rendered = render(view(true));
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir magnets com o Meshy' }));
+    fireEvent.click(screen.getByRole('button', { name: ptBR['settings.general.registerMagnet'] }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
         ptBR['error.system.protocolRegistration'],
     );

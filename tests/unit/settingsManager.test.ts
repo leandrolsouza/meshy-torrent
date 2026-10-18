@@ -75,6 +75,8 @@ describe('SettingsManager.get()', () => {
                 'globalTrackers',
                 'locale',
                 'maxConcurrentDownloads',
+                'maxConcurrentSeeders',
+                'seedingEnabled',
                 'notificationsEnabled',
                 'pexEnabled',
                 'theme',

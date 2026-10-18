@@ -27,6 +27,11 @@ interface SettingsFieldRule {
  * Toda chave do contrato deve ter uma regra de validação.
  */
 const settingsRules = {
+    seedingEnabled: { validate: isValidNetworkToggle, errorCode: ErrorCodes.INVALID_SETTINGS },
+    maxConcurrentSeeders: {
+        validate: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 20,
+        errorCode: ErrorCodes.INVALID_SETTINGS,
+    },
     globalTrackers: {
         validate: (value) =>
             Array.isArray(value) &&

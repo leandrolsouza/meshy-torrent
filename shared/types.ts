@@ -23,6 +23,7 @@ export type TorrentStatus =
     | 'downloading'
     | 'paused'
     | 'completed'
+    | 'seeding'
     | 'error'
     | 'metadata-failed'
     | 'files-not-found';
@@ -55,6 +56,7 @@ export interface DownloadItem {
     status: TorrentStatus;
     destinationFolder: string;
     addedAt: number; // timestamp ms
+    seedingDisabled?: boolean;
     completedAt?: number; // timestamp ms
     elapsedMs?: number;
     selectedFileCount?: number; // quantidade de arquivos selecionados
@@ -112,6 +114,7 @@ export interface PersistedDownloadItem {
     status: TorrentStatus;
     destinationFolder: string;
     addedAt: number;
+    seedingDisabled?: boolean;
     completedAt?: number;
     elapsedMs?: number;
     magnetUri?: string;
@@ -163,6 +166,8 @@ export interface AppSettings {
     downloadSpeedLimit: number; // KB/s, 0 = sem limite
     uploadSpeedLimit: number; // KB/s, 0 = sem limite
     maxConcurrentDownloads: number; // máx downloads simultâneos (1–10, padrão 3)
+    seedingEnabled: boolean;
+    maxConcurrentSeeders: number;
     notificationsEnabled: boolean; // notificações nativas do OS (padrão: true)
     theme: string; // identificador do tema ativo (ex: "vs-code-dark")
     locale: string; // identificador de locale BCP 47 (ex: "pt-BR", "en-US")
@@ -278,6 +283,7 @@ export interface MeshyAPI {
     addTorrentFile(filePath: string): Promise<IPCResponse<DownloadItem>>;
     addTorrentFileBuffer(buffer: Uint8Array): Promise<IPCResponse<DownloadItem>>;
     addMagnetLink(magnetUri: string): Promise<IPCResponse<DownloadItem>>;
+    toggleSeed(infoHash: string): Promise<IPCResponse<DownloadItem>>;
     pause(infoHash: string): Promise<IPCResponse<void>>;
     resume(infoHash: string): Promise<IPCResponse<void>>;
     remove(infoHash: string, deleteFiles: boolean): Promise<IPCResponse<void>>;

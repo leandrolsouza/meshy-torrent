@@ -66,6 +66,7 @@ const EXPECTED_CHANNELS = [
     'torrent:add-file',
     'torrent:add-file-buffer',
     'torrent:add-magnet',
+    'torrent:toggle-seed',
     'torrent:pause',
     'torrent:resume',
     'torrent:remove',
@@ -120,6 +121,8 @@ function makeMockDownloadManager(): DownloadManager {
         addTorrentFile: jest.fn().mockResolvedValue(item),
         addTorrentBuffer: jest.fn().mockResolvedValue(item),
         addMagnetLink: jest.fn().mockResolvedValue(item),
+        toggleSeed: jest.fn().mockResolvedValue(item),
+        applySeedingSettings: jest.fn().mockResolvedValue(undefined),
         pause: jest.fn().mockResolvedValue(undefined),
         resume: jest.fn().mockResolvedValue(undefined),
         remove: jest.fn().mockResolvedValue(undefined),
@@ -139,6 +142,8 @@ function makeMockSettingsManager(): SettingsManager {
         downloadSpeedLimit: 0,
         uploadSpeedLimit: 0,
         maxConcurrentDownloads: 3,
+        seedingEnabled: false,
+        maxConcurrentSeeders: 2,
         notificationsEnabled: true,
         theme: 'vs-code-dark',
         locale: 'pt-BR',
@@ -328,6 +333,32 @@ describe('Integration: IPC Channels (Requirements 8.1, 8.5)', () => {
     // ── Valid payloads: verify interaction with managers ──────────────────────
 
     describe('Valid payloads: handlers delegate to correct managers', () => {
+        it('toggle-seed valida o hash e retorna o item confirmado', async () => {
+            const handler = getHandler('torrent:toggle-seed')!;
+            const infoHash = makeSampleDownloadItem().infoHash;
+            expect(await handler({}, { infoHash: '../invalid' })).toEqual({
+                success: false,
+                error: ErrorCodes.INVALID_PARAMS,
+            });
+            expect(downloadManager.toggleSeed).not.toHaveBeenCalled();
+            expect(await handler({}, { infoHash })).toEqual({
+                success: true,
+                data: expect.objectContaining({ infoHash }),
+            });
+            expect(downloadManager.toggleSeed).toHaveBeenCalledWith(infoHash);
+        });
+        it('settings:set aplica os slots e rejeita limites inválidos', async () => {
+            const handler = getHandler('settings:set')!;
+            expect(await handler({}, { maxConcurrentSeeders: 0 })).toEqual({
+                success: false,
+                error: ErrorCodes.INVALID_SETTINGS,
+            });
+            expect(downloadManager.applySeedingSettings).not.toHaveBeenCalled();
+            expect(await handler({}, { seedingEnabled: true, maxConcurrentSeeders: 4 })).toEqual(
+                expect.objectContaining({ success: true }),
+            );
+            expect(downloadManager.applySeedingSettings).toHaveBeenCalledTimes(1);
+        });
         it('torrent:add-file delegates to downloadManager.addTorrentFile', async () => {
             const handler = getHandler('torrent:add-file')!;
             await handler(null, { filePath: '/path/to/test.torrent' });
@@ -543,6 +574,8 @@ describe('Integration: IPC Channels (Requirements 8.1, 8.5)', () => {
                     downloadSpeedLimit: 0,
                     uploadSpeedLimit: 0,
                     maxConcurrentDownloads: 3,
+                    seedingEnabled: false,
+                    maxConcurrentSeeders: 2,
                     notificationsEnabled: true,
                     theme: 'vs-code-dark',
                     locale: 'pt-BR',
@@ -563,6 +596,8 @@ describe('Integration: IPC Channels (Requirements 8.1, 8.5)', () => {
                 downloadSpeedLimit: 1024,
                 uploadSpeedLimit: 0,
                 maxConcurrentDownloads: 3,
+                seedingEnabled: false,
+                maxConcurrentSeeders: 2,
                 notificationsEnabled: true,
                 theme: 'vs-code-dark',
                 locale: 'pt-BR',
@@ -594,6 +629,8 @@ describe('Integration: IPC Channels (Requirements 8.1, 8.5)', () => {
                 downloadSpeedLimit: 0,
                 uploadSpeedLimit: 512,
                 maxConcurrentDownloads: 3,
+                seedingEnabled: false,
+                maxConcurrentSeeders: 2,
                 notificationsEnabled: true,
                 theme: 'vs-code-dark',
                 locale: 'pt-BR',
@@ -625,6 +662,8 @@ describe('Integration: IPC Channels (Requirements 8.1, 8.5)', () => {
                 downloadSpeedLimit: 0,
                 uploadSpeedLimit: 0,
                 maxConcurrentDownloads: 3,
+                seedingEnabled: false,
+                maxConcurrentSeeders: 2,
                 notificationsEnabled: true,
                 theme: 'vs-code-dark',
                 locale: 'pt-BR',

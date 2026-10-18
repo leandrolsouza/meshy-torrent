@@ -107,6 +107,8 @@ function makeMockSettings(folder = '/downloads'): SettingsManager {
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             globalTrackers: [],
             autoApplyGlobalTrackers: false,
@@ -1261,6 +1263,8 @@ describe('DownloadManager — Property 16: Auto-retomada seletiva na restauraç�
                     downloadSpeedLimit: 0,
                     uploadSpeedLimit: 0,
                     maxConcurrentDownloads: Math.max(activeCount, 10),
+                    seedingEnabled: false,
+                    maxConcurrentSeeders: 2,
                     notificationsEnabled: true,
                 });
 
@@ -1562,6 +1566,8 @@ describe('DownloadManager — Aplicação automática de trackers globais (Requi
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             globalTrackers,
             autoApplyGlobalTrackers: true,
@@ -1594,6 +1600,8 @@ describe('DownloadManager — Aplicação automática de trackers globais (Requi
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             globalTrackers,
             autoApplyGlobalTrackers: true,
@@ -1634,6 +1642,8 @@ describe('DownloadManager — Aplicação automática de trackers globais (Requi
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 1, // limite baixo para forçar fila
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             globalTrackers,
             autoApplyGlobalTrackers: true,
@@ -1681,6 +1691,8 @@ describe('DownloadManager — Aplicação automática de trackers globais (Requi
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             globalTrackers,
             autoApplyGlobalTrackers: true,
@@ -1689,11 +1701,11 @@ describe('DownloadManager — Aplicação automática de trackers globais (Requi
 
         // Segundo tracker lança erro (duplicata)
         (engine.addTracker as jest.Mock)
-            .mockImplementationOnce(() => { }) // tracker1 OK
+            .mockImplementationOnce(() => {}) // tracker1 OK
             .mockImplementationOnce(() => {
                 throw new Error('Tracker já presente');
             }) // tracker2 falha
-            .mockImplementationOnce(() => { }); // tracker3 OK
+            .mockImplementationOnce(() => {}); // tracker3 OK
 
         const info = makeTorrentInfo({
             infoHash: INFO_HASH,
@@ -1720,6 +1732,8 @@ describe('DownloadManager — Aplicação automática de trackers globais (Requi
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             globalTrackers: [],
             autoApplyGlobalTrackers: true,
@@ -1798,6 +1812,8 @@ describe('DownloadManager — Propriedade 7: Após aplicar trackers globais, sup
                         downloadSpeedLimit: 0,
                         uploadSpeedLimit: 0,
                         maxConcurrentDownloads: 3,
+                        seedingEnabled: false,
+                        maxConcurrentSeeders: 2,
                         notificationsEnabled: true,
                         globalTrackers,
                         autoApplyGlobalTrackers: true,
@@ -1832,7 +1848,6 @@ describe('DownloadManager — Propriedade 7: Após aplicar trackers globais, sup
         );
     });
 });
-
 
 // ─── done event populates metadata cache ─────────────────────────────────────
 

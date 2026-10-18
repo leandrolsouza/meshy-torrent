@@ -71,7 +71,11 @@ export function createNotificationManager(
             return;
         }
 
-        if (item.status === 'completed') {
+        if (
+            (item.status === 'completed' || item.status === 'seeding') &&
+            prev !== 'completed' &&
+            prev !== 'seeding'
+        ) {
             const sizeStr = formatBytes(item.totalSize);
             const durationStr = item.elapsedMs ? ` em ${formatDuration(item.elapsedMs)}` : '';
             const notification = new Notification({

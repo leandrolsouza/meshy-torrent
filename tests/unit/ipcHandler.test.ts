@@ -71,6 +71,8 @@ function makeMockSettingsManager(): SettingsManager {
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             theme: 'vs-code-dark',
             locale: 'pt-BR',
@@ -132,6 +134,7 @@ describe('registerIpcHandlers — IPC channel registration (Requirement 8.1)', (
         'torrent:add-file',
         'torrent:add-file-buffer',
         'torrent:add-magnet',
+        'torrent:toggle-seed',
         'torrent:pause',
         'torrent:resume',
         'torrent:remove',
@@ -618,7 +621,7 @@ describe('registerIpcHandlers — tracker handlers', () => {
                 'udp://fail.example.com:6969',
             ]);
             (mockTorrentEngine.addTracker as jest.Mock)
-                .mockImplementationOnce(() => { }) // primeiro sucesso
+                .mockImplementationOnce(() => {}) // primeiro sucesso
                 .mockImplementationOnce(() => {
                     throw new Error('Tracker já presente');
                 }); // segundo falha
@@ -766,6 +769,7 @@ describe('Property 18: Resposta IPC sempre tem forma estruturada', () => {
     const ALL_CHANNELS = [
         'torrent:add-file',
         'torrent:add-magnet',
+        'torrent:toggle-seed',
         'torrent:pause',
         'torrent:resume',
         'torrent:remove',
@@ -838,6 +842,7 @@ describe('Property 18: Resposta IPC sempre tem forma estruturada', () => {
         const CHANNELS_WITH_REQUIRED_PARAMS = [
             'torrent:add-file',
             'torrent:add-magnet',
+            'torrent:toggle-seed',
             'torrent:pause',
             'torrent:resume',
             'torrent:remove',
@@ -978,8 +983,8 @@ describe('Property 19: Evento de progresso IPC contém todos os itens ativos', (
             hashes.length === 0
                 ? fc.constant<DownloadItem[]>([])
                 : fc
-                    .tuple(...hashes.map((h) => downloadItemArb(h)))
-                    .map((items) => items as DownloadItem[]),
+                      .tuple(...hashes.map((h) => downloadItemArb(h)))
+                      .map((items) => items as DownloadItem[]),
         );
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1332,6 +1337,8 @@ describe('registerIpcHandlers — detecção de mudança de rede e restart', () 
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             theme: 'vs-code-dark',
             locale: 'pt-BR',
@@ -1364,6 +1371,8 @@ describe('registerIpcHandlers — detecção de mudança de rede e restart', () 
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             theme: 'vs-code-dark',
             locale: 'pt-BR',
@@ -1396,6 +1405,8 @@ describe('registerIpcHandlers — detecção de mudança de rede e restart', () 
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             theme: 'vs-code-dark',
             locale: 'pt-BR',
@@ -1429,6 +1440,8 @@ describe('registerIpcHandlers — detecção de mudança de rede e restart', () 
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             theme: 'vs-code-dark',
             locale: 'pt-BR',
@@ -1462,6 +1475,8 @@ describe('registerIpcHandlers — detecção de mudança de rede e restart', () 
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             theme: 'vs-code-dark',
             locale: 'pt-BR',
@@ -1500,6 +1515,8 @@ describe('registerIpcHandlers — detecção de mudança de rede e restart', () 
                     downloadSpeedLimit: 0,
                     uploadSpeedLimit: 0,
                     maxConcurrentDownloads: 3,
+                    seedingEnabled: false,
+                    maxConcurrentSeeders: 2,
                     notificationsEnabled: true,
                     theme: 'vs-code-dark',
                     locale: 'pt-BR',
@@ -1517,6 +1534,8 @@ describe('registerIpcHandlers — detecção de mudança de rede e restart', () 
                 downloadSpeedLimit: 0,
                 uploadSpeedLimit: 0,
                 maxConcurrentDownloads: 3,
+                seedingEnabled: false,
+                maxConcurrentSeeders: 2,
                 notificationsEnabled: true,
                 theme: 'vs-code-dark',
                 locale: 'pt-BR',
@@ -1554,6 +1573,8 @@ describe('registerIpcHandlers — detecção de mudança de rede e restart', () 
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: 3,
+            seedingEnabled: false,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             theme: 'vs-code-dark',
             locale: 'pt-BR',
@@ -1592,6 +1613,7 @@ describe('registerIpcHandlers — rejeição de operações durante restart do m
     const GUARDED_CHANNELS = [
         'torrent:add-file',
         'torrent:add-magnet',
+        'torrent:toggle-seed',
         'torrent:pause',
         'torrent:resume',
         'torrent:remove',
@@ -1715,6 +1737,8 @@ describe('Property 2: Reinício acionado somente quando valores de rede mudam', 
                     downloadSpeedLimit: 0,
                     uploadSpeedLimit: 0,
                     maxConcurrentDownloads: 3,
+                    seedingEnabled: false,
+                    maxConcurrentSeeders: 2,
                     notificationsEnabled: true,
                     theme: 'vs-code-dark',
                     locale: 'pt-BR',
@@ -2479,7 +2503,7 @@ describe('registerIpcHandlers — withTimeout expiração de operação (Task 4.
         jest.clearAllMocks();
         const dm = makeMockDownloadManager();
         // pause nunca resolve — simula operação travada
-        (dm.pause as jest.Mock).mockReturnValue(new Promise<void>(() => { }));
+        (dm.pause as jest.Mock).mockReturnValue(new Promise<void>(() => {}));
 
         const sm = makeMockSettingsManager();
         const te = makeMockTorrentEngine();

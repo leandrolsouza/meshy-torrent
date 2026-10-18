@@ -5,6 +5,10 @@ import styles from './SettingsPanel.module.css';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface NetworkSettingsProps {
+    seedingEnabled: boolean;
+    maxConcurrentSeeders: number;
+    onSeedingChange: (enabled: boolean) => void;
+    onMaxSeedersChange: (max: number) => void;
     dhtEnabled: boolean;
     pexEnabled: boolean;
     utpEnabled: boolean;
@@ -19,6 +23,10 @@ interface NetworkSettingsProps {
  * Aba "Rede" — configurações avançadas de rede (DHT, PEX, uTP).
  */
 export function NetworkSettings({
+    seedingEnabled,
+    maxConcurrentSeeders,
+    onSeedingChange,
+    onMaxSeedersChange,
     dhtEnabled,
     pexEnabled,
     utpEnabled,
@@ -30,6 +38,32 @@ export function NetworkSettings({
 
     return (
         <>
+            <fieldset className={styles.fieldGroup}>
+                <legend>{intl.formatMessage({ id: 'settings.seeding.title' })}</legend>
+                <label className={styles.checkboxLabel}>
+                    <input
+                        type="checkbox"
+                        checked={seedingEnabled}
+                        onChange={(e) => onSeedingChange(e.target.checked)}
+                    />
+                    {intl.formatMessage({ id: 'settings.seeding.enabled' })}
+                </label>
+                <p>{intl.formatMessage({ id: 'settings.seeding.enabledDescription' })}</p>
+                <label>
+                    {intl.formatMessage({ id: 'settings.seeding.maxConcurrent' })}
+                    <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        step={1}
+                        required
+                        value={maxConcurrentSeeders}
+                        disabled={!seedingEnabled}
+                        onChange={(e) => onMaxSeedersChange(e.target.valueAsNumber)}
+                    />
+                </label>
+                <p>{intl.formatMessage({ id: 'settings.seeding.maxConcurrentDescription' })}</p>
+            </fieldset>
             <div className={styles.fieldGroup}>
                 <label className={styles.checkboxLabel}>
                     <input

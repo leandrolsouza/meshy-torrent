@@ -12,11 +12,14 @@ export interface PeersTabProps {
 /**
  * Aba de Peers — exibe tabela de pares conectados ao torrent.
  *
- * - Polling de 2s habilitado apenas quando status é "downloading".
+ * - Polling de 2s habilitado durante download e seeding.
  * - Exibe última lista sem polling quando status não é "downloading".
  * - Interrompe polling em caso de erro IPC até próxima ativação.
  */
-export const PeersTab = React.memo(function PeersTab({ infoHash, status }: PeersTabProps): React.JSX.Element {
+export const PeersTab = React.memo(function PeersTab({
+    infoHash,
+    status,
+}: PeersTabProps): React.JSX.Element {
     const [peers, setPeers] = useState<PeerInfo[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [hasLoaded, setHasLoaded] = useState(false);
@@ -39,8 +42,8 @@ export const PeersTab = React.memo(function PeersTab({ infoHash, status }: Peers
         }
     }, [infoHash]);
 
-    // Polling habilitado apenas quando downloading e sem erro
-    const pollingEnabled = status === 'downloading' && !hasError;
+    // Polling habilitado durante download ou seeding, sem erro
+    const pollingEnabled = (status === 'downloading' || status === 'seeding') && !hasError;
     usePolling(fetchPeers, 2000, pollingEnabled);
 
     // Memoiza as linhas da tabela para evitar re-map a cada render do componente pai
@@ -98,9 +101,7 @@ export const PeersTab = React.memo(function PeersTab({ infoHash, status }: Peers
                         <th>Progresso</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {peerRows}
-                </tbody>
+                <tbody>{peerRows}</tbody>
             </table>
         </div>
     );

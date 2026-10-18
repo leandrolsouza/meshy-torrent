@@ -16,6 +16,8 @@ export type { AppSettings } from '../shared/types';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PersistedSettings {
+    seedingEnabled: boolean;
+    maxConcurrentSeeders: number;
     bandwidth?: AppSettings['bandwidth'];
     closeToTray: boolean;
     destinationFolder: string;
@@ -138,6 +140,8 @@ export function createSettingsManager(options: CreateSettingsManagerOptions = {}
                 uploadSpeedLimit: store.get('uploadSpeedLimit') ?? 0,
                 maxConcurrentDownloads:
                     store.get('maxConcurrentDownloads') ?? DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+                seedingEnabled: store.get('seedingEnabled') ?? true,
+                maxConcurrentSeeders: store.get('maxConcurrentSeeders') ?? 2,
                 notificationsEnabled: store.get('notificationsEnabled') ?? true,
                 theme: store.get('theme') ?? 'vs-code-dark',
                 locale: store.get('locale') ?? 'pt-BR',
@@ -159,6 +163,8 @@ export function createSettingsManager(options: CreateSettingsManagerOptions = {}
                 'downloadSpeedLimit',
                 'uploadSpeedLimit',
                 'maxConcurrentDownloads',
+                'seedingEnabled',
+                'maxConcurrentSeeders',
                 'notificationsEnabled',
                 'theme',
                 'locale',
@@ -226,6 +232,11 @@ export function createSettingsManager(options: CreateSettingsManagerOptions = {}
  * Loga um warning para cada correção aplicada.
  */
 function sanitizeOnLoad(store: SettingsStore, getDownloadsPath: () => string, log: Logger): void {
+    const seeders = store.get('maxConcurrentSeeders');
+    if (seeders !== undefined && (!Number.isInteger(seeders) || seeders < 1 || seeders > 20))
+        store.set('maxConcurrentSeeders', 2);
+    const enabled = store.get('seedingEnabled');
+    if (enabled !== undefined && typeof enabled !== 'boolean') store.set('seedingEnabled', true);
     const bandwidth = store.get('bandwidth');
     if (bandwidth !== undefined && !isValidBandwidthSettings(bandwidth))
         store.set('bandwidth', createDefaultBandwidthSettings());
@@ -321,6 +332,8 @@ function createElectronStore(): SettingsStore {
             downloadSpeedLimit: 0,
             uploadSpeedLimit: 0,
             maxConcurrentDownloads: DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+            seedingEnabled: true,
+            maxConcurrentSeeders: 2,
             notificationsEnabled: true,
             theme: 'vs-code-dark',
             locale: 'pt-BR',

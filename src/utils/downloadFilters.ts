@@ -26,6 +26,7 @@ const STATUS_TO_GROUP: Record<TorrentStatus, StatusGroup> = {
     'resolving-metadata': 'waiting',
     paused: 'paused',
     completed: 'completed',
+    seeding: 'completed',
     error: 'error',
     'metadata-failed': 'error',
     'files-not-found': 'error',

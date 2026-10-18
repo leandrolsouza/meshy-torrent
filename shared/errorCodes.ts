@@ -25,6 +25,7 @@ export const ErrorCodes = {
 
     // Settings
     NO_FOLDER_SELECTED: 'error.settings.noFolderSelected',
+    INVALID_SETTINGS: 'error.settings.invalid',
     INVALID_SETTINGS_PAYLOAD: 'error.settings.invalidPayload',
     INVALID_LOCALE: 'error.settings.invalidLocale',
 

@@ -856,7 +856,7 @@ describe('TorrentEngine — opções de rede DHT/PEX/uTP (Requisito 3)', () => {
             expect.objectContaining({
                 utPex: false,
                 maxConns: 24,
-                seedOutgoingConnections: false,
+                seedOutgoingConnections: true,
             }),
         );
     });
@@ -1066,7 +1066,7 @@ describe('TorrentEngine.restart() — fluxo completo', () => {
         );
     });
 
-    it('não re-adiciona torrents com status "completed"', async () => {
+    it('restaura seeders pausados para o manager reaplicar os slots', async () => {
         const infoHash = 'b'.repeat(40);
         const magnetURI = `magnet:?xt=urn:btih:${infoHash}`;
 
@@ -1128,15 +1128,18 @@ describe('TorrentEngine.restart() — fluxo completo', () => {
 
         // Verificar que o status é 'completed'
         const allTorrents = engine.getAll();
-        expect(allTorrents[0].status).toBe('completed');
+        expect(allTorrents[0].status).toBe('seeding');
 
         setupMockWebTorrentForRestart(MockWebTorrent);
 
         await engine.restart(DEFAULT_OPTIONS);
 
-        // O novo client não deve ter recebido chamada add()
+        // O manager decide quais torrents podem retomar após o restart.
         const newClientInstance = MockWebTorrent.mock.results[0].value;
-        expect(newClientInstance.add).not.toHaveBeenCalled();
+        expect(newClientInstance.add).toHaveBeenCalledWith(
+            magnetURI,
+            expect.objectContaining({ paused: true }),
+        );
     });
 
     it('configura PEX disable no novo cliente quando pexEnabled é false', async () => {
@@ -1872,7 +1875,7 @@ describe('TorrentEngine.getPieces() — cobertura de caminhos ausentes', () => {
 // ─── _attachTorrentListeners — eventos done, error, download, upload ──────────
 
 describe('TorrentEngine._attachTorrentListeners — eventos de torrent (via addMagnetLink)', () => {
-    it('marca status "completed" e emite "done" quando torrent dispara done', async () => {
+    it('marca status seeding e emite done sem parar a rede', async () => {
         const infoHash = 'b8'.repeat(20);
         const magnetURI = `magnet:?xt=urn:btih:${infoHash}`;
         const fakeTorrent = makeEventTorrent(infoHash);
@@ -1887,7 +1890,7 @@ describe('TorrentEngine._attachTorrentListeners — eventos de torrent (via addM
         (fakeTorrent as unknown as EventEmitter).emit('done');
 
         // statusMap e emissão de 'done' são síncronos no handler
-        expect(engine.getAll().find((i) => i.infoHash === infoHash)?.status).toBe('completed');
+        expect(engine.getAll().find((i) => i.infoHash === infoHash)?.status).toBe('seeding');
         expect(doneEvents).toContain(infoHash);
     });
 

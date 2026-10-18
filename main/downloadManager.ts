@@ -47,6 +47,8 @@ export interface DownloadManager {
     addTorrentFile(filePath: string): Promise<DownloadItem>;
     addTorrentBuffer(buffer: Buffer): Promise<DownloadItem>;
     addMagnetLink(magnetUri: string): Promise<DownloadItem>;
+    toggleSeed(infoHash: string): Promise<DownloadItem>;
+    applySeedingSettings(): Promise<void>;
     pause(infoHash: string): Promise<void>;
     resume(infoHash: string): Promise<void>;
     remove(infoHash: string, deleteFiles: boolean): Promise<void>;
@@ -154,6 +156,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     private readonly queue: string[] = [];
     /** Limite de downloads simultâneos */
     private maxConcurrent: number;
+    private seedWork: Promise<void> = Promise.resolve();
+    private readonly seedingSet = new Set<string>();
     private pendingAdds = 0;
     private readonly pendingHashes = new Set<string>();
     /** Tracks magnet URIs for queued items that need to be added to the engine later */
@@ -218,9 +222,15 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
 
         // Subscribe to engine events
         this.engine.on('restarting', () => {
+            this.seedingSet.clear();
+            for (const [hash, item] of this.items) {
+                if (item.status === 'seeding')
+                    this.items.set(hash, { ...item, status: 'completed' });
+            }
             for (const hash of this.metadataTimers.keys()) this._clearMetadataTimer(hash);
         });
         this.engine.on('restarted', () => {
+            this._scheduleSeeds();
             for (const item of this.items.values()) {
                 if (item.status === 'resolving-metadata') this._startMetadataTimer(item.infoHash);
             }
@@ -248,6 +258,18 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 existing.status === 'error'
             )
                 return;
+
+            if (existing.status === 'seeding') {
+                const updated = {
+                    ...existing,
+                    uploadSpeed: info.uploadSpeed,
+                    numPeers: info.numPeers,
+                    numSeeders: info.numSeeders,
+                };
+                this.items.set(info.infoHash, updated);
+                this.emit('update', updated);
+                return;
+            }
 
             // Detect metadata resolution: resolving-metadata → downloading
             // When this transition happens, clear the 60s timeout and update
@@ -319,17 +341,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 try {
                     const meta = this.engine.getMetadata(info.infoHash);
                     this._metadataCache.set(info.infoHash, meta);
-                } catch { /* metadata may not be available */ }
-                void this.engine
-                    .pause(info.infoHash)
-                    .catch((err) =>
-                        this.log.warn(
-                            '[DownloadManager] Falha ao encerrar torrent concluído:',
-                            err,
-                        ),
-                    );
-                this.items.set(info.infoHash, completed);
-                this.emit('update', completed);
+                } catch {
+                    /* metadata may not be available */
+                }
+                this._completeTorrent(completed);
 
                 // Liberar slot para a fila
                 this._processQueue();
@@ -358,13 +373,16 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
 
         this.engine.on('done', (infoHash: string) => {
             const existing = this.items.get(infoHash);
-            if (!existing || existing.fileOperation) return;
+            if (!existing || existing.fileOperation || !this._isActiveStatus(existing.status))
+                return;
 
             this._clearMetadataTimer(infoHash);
             try {
                 const meta = this.engine.getMetadata(infoHash);
                 this._metadataCache.set(infoHash, meta);
-            } catch { /* metadata may not be available */ }
+            } catch {
+                /* metadata may not be available */
+            }
             const completedAt = Date.now();
             const elapsedMs = completedAt - existing.addedAt;
             const updated: DownloadItem = {
@@ -374,15 +392,9 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 completedAt,
                 elapsedMs,
             };
-            void this.engine
-                .pause(infoHash)
-                .catch((err) =>
-                    this.log.warn('[DownloadManager] Falha ao encerrar torrent concluído:', err),
-                );
-            this.items.set(infoHash, updated);
-            this.emit('update', updated);
+            this._completeTorrent(updated);
 
-            // Um slot foi liberado — processar a fila
+            // Um slot de download foi liberado, independente do seed.
             this._processQueue();
         });
 
@@ -420,6 +432,9 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             this.emit('update', updated);
 
             // Um slot foi liberado — processar a fila
+            this.seedingSet.delete(infoHash);
+            this._scheduleSeeds();
+            this.persistSession();
             this._processQueue();
         });
     }
@@ -432,7 +447,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
         selectedIndices: number[],
     ): Promise<DownloadItem> {
         const work = this.admission
-            .catch(() => { })
+            .catch(() => {})
             .then(async () => {
                 const { preview } = prepared;
                 if (this.items.has(preview.infoHash) || this.pendingHashes.has(preview.infoHash))
@@ -475,8 +490,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                         progress: complete
                             ? 1
                             : selectedBytes > 0
-                                ? downloadedSize / selectedBytes
-                                : 0,
+                              ? downloadedSize / selectedBytes
+                              : 0,
                         selectedFileCount: indices.length,
                         totalFileCount: preview.files.length,
                         status: complete ? 'completed' : hasSlot ? 'paused' : 'queued',
@@ -498,6 +513,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                     // Libera a reserva de slot antes de resume, que contabiliza os itens ativos.
                     this.pendingAdds--;
                     slotReserved = false;
+                    if (complete) this._scheduleSeeds();
                     if (hasSlot && !complete) {
                         try {
                             await this.resume(info.infoHash, true);
@@ -556,7 +572,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
         destinationFolder?: string,
     ): Promise<DownloadItem> {
         const work = this.admission
-            .catch(() => { })
+            .catch(() => {})
             .then(() =>
                 this._withLock(infoHash, async () => {
                     const existing = this.items.get(infoHash);
@@ -612,6 +628,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                     let keepOriginals = false;
                     try {
                         await this.engine.detachTorrent(infoHash);
+                        this.seedingSet.delete(infoHash);
+                        this._scheduleSeeds();
                         if (operation === 'move') {
                             const sourcePaths = new Set(
                                 await Promise.all(
@@ -691,10 +709,11 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                             result.errorMessage = ErrorCodes.FILE_MOVE_SOURCE_RETAINED;
                         this.persistSession();
                         this.emit('update', result);
+                        this._scheduleSeeds();
                         return { ...result };
                     } catch (error) {
                         if (!destinationCommitted) {
-                            await this.engine.detachTorrent(infoHash).catch(() => { });
+                            await this.engine.detachTorrent(infoHash).catch(() => {});
                             await move
                                 ?.rollback()
                                 .catch((rollbackError) =>
@@ -1005,6 +1024,193 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             this._processQueue();
         }
     }
+    /** Serializa a fila de seed, inclusive mudanças concorrentes de configuração. */
+    private _scheduleSeeds(): void {
+        void this.applySeedingSettings().catch((err) =>
+            this.log.warn('[DownloadManager] Falha no seeding:', err),
+        );
+    }
+
+    private _completeTorrent(item: DownloadItem): void {
+        const settings = this.settings.get();
+        const waiting = [...this.items.values()].some(
+            (candidate) =>
+                candidate.status === 'completed' &&
+                !candidate.seedingDisabled &&
+                !candidate.fileOperation &&
+                (candidate.completedAt ?? 0) <= (item.completedAt ?? 0),
+        );
+        const canSeed =
+            !waiting &&
+            (settings.seedingEnabled ?? true) &&
+            !item.seedingDisabled &&
+            this.seedingSet.size < (settings.maxConcurrentSeeders ?? 2) &&
+            !this.engine.isRestarting?.();
+        const updated: DownloadItem = {
+            ...item,
+            status: canSeed ? 'seeding' : 'completed',
+            downloadedSize: item.totalSize,
+            downloadSpeed: 0,
+            timeRemaining: 0,
+        };
+        if (canSeed) this.seedingSet.add(item.infoHash);
+        this.items.set(item.infoHash, updated);
+        this.emit('update', updated);
+        if (!canSeed) {
+            void this._withLock(item.infoHash, () => this.engine.pause(item.infoHash))
+                .catch((err) => this.log.warn('[DownloadManager] Falha ao suspender seed:', err))
+                .finally(() => this._scheduleSeeds());
+        }
+        this.persistSession();
+    }
+
+    async toggleSeed(infoHash: string): Promise<DownloadItem> {
+        await this._withLock(infoHash, async () => {
+            const item = this.items.get(infoHash);
+            if (!item) throw new Error(ErrorCodes.TORRENT_NOT_FOUND);
+            if (item.fileOperation) throw new Error(ErrorCodes.FILE_OPERATION_BUSY);
+            const updated = { ...item, seedingDisabled: !item.seedingDisabled };
+            if (updated.seedingDisabled && item.status === 'seeding') {
+                this.items.set(infoHash, { ...updated, status: 'completed', uploadSpeed: 0 });
+                try {
+                    await this.engine.pause(infoHash);
+                } catch (err) {
+                    this.items.set(infoHash, item);
+                    throw err;
+                }
+                this.seedingSet.delete(infoHash);
+            } else this.items.set(infoHash, updated);
+            this.persistSession();
+            this.emit('update', this.items.get(infoHash)!);
+        });
+        await this.applySeedingSettings();
+        return this.items.get(infoHash)!;
+    }
+
+    applySeedingSettings(): Promise<void> {
+        const work = this.seedWork
+            .catch(() => {})
+            .then(async () => {
+                if (this.engine.isRestarting?.()) return;
+                const settings = this.settings.get();
+                const max =
+                    (settings.seedingEnabled ?? true) ? (settings.maxConcurrentSeeders ?? 2) : 0;
+                // Set conserva a ordem real de início; os últimos são suspensos primeiro.
+                for (const hash of [...this.seedingSet].reverse()) {
+                    if (this.seedingSet.size <= max) break;
+                    await this._withLock(hash, async () => {
+                        const item = this.items.get(hash);
+                        if (!item || item.status !== 'seeding') return;
+                        const updated: DownloadItem = {
+                            ...item,
+                            status: 'completed',
+                            uploadSpeed: 0,
+                        };
+                        this.items.set(hash, updated);
+                        try {
+                            await this.engine.pause(hash);
+                        } catch (err) {
+                            this.items.set(hash, item);
+                            throw err;
+                        }
+                        this.seedingSet.delete(hash);
+                        this.emit('update', updated);
+                    });
+                }
+                const candidates = [...this.items.values()]
+                    .filter(
+                        (item) =>
+                            item.status === 'completed' &&
+                            !item.seedingDisabled &&
+                            !item.fileOperation,
+                    )
+                    .sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
+                for (const candidate of candidates) {
+                    if (this.seedingSet.size >= max || this.engine.isRestarting?.()) break;
+                    await this._withLock(candidate.infoHash, async () => {
+                        const item = this.items.get(candidate.infoHash);
+                        if (
+                            !item ||
+                            item.status !== 'completed' ||
+                            item.seedingDisabled ||
+                            item.fileOperation
+                        )
+                            return;
+                        if (!existsSync(item.destinationFolder)) {
+                            const missing: DownloadItem = { ...item, status: 'files-not-found' };
+                            this.items.set(item.infoHash, missing);
+                            this.emit('update', missing);
+                            return;
+                        }
+                        const updated: DownloadItem = { ...item, status: 'seeding' };
+                        this.items.set(item.infoHash, updated);
+                        this.seedingSet.add(item.infoHash);
+                        try {
+                            if (
+                                !this.engine
+                                    .getAll()
+                                    .some((torrent) => torrent.infoHash === item.infoHash)
+                            ) {
+                                const magnet =
+                                    this.originalMagnetUris.get(item.infoHash) ??
+                                    'magnet:?xt=urn:btih:' + item.infoHash;
+                                // A verificação dos dados precede a retomada da rede.
+                                let buffer = this.confirmedMetadata.get(item.infoHash);
+                                if (!buffer && this.recoverMetadata) {
+                                    const recovered = await this.recoverMetadata(magnet);
+                                    if (recovered.preview.infoHash !== item.infoHash)
+                                        throw new Error(ErrorCodes.FILE_METADATA_UNAVAILABLE);
+                                    buffer = Buffer.from(recovered.buffer);
+                                    this.confirmedMetadata.set(item.infoHash, buffer);
+                                }
+                                if (buffer)
+                                    await this.engine.addTorrentBuffer(
+                                        buffer,
+                                        true,
+                                        this._torrentOptions(item),
+                                    );
+                                else
+                                    await this.engine.addMagnetLink(
+                                        magnet,
+                                        true,
+                                        this._torrentOptions(item),
+                                    );
+                            }
+                            await this.engine.resume(item.infoHash, true);
+                            if (
+                                this.engine.isRestarting?.() ||
+                                this.items.get(item.infoHash)?.status !== 'seeding'
+                            )
+                                return;
+                            this.emit('update', this.items.get(item.infoHash)!);
+                        } catch (err) {
+                            if (
+                                this.engine.isRestarting?.() ||
+                                this.items.get(item.infoHash)?.status !== 'seeding'
+                            )
+                                return;
+                            this.seedingSet.delete(item.infoHash);
+                            const failed: DownloadItem = {
+                                ...item,
+                                status: 'error',
+                                errorMessage: (err as Error).message,
+                            };
+                            this.items.set(item.infoHash, failed);
+                            this.emit('update', failed);
+                            try {
+                                await this.engine.pause(item.infoHash);
+                            } catch {
+                                /* erro já informado no item */
+                            }
+                        }
+                    });
+                }
+                this.persistSession();
+            });
+        this.seedWork = work;
+        return work;
+    }
+
     // ── pause ───────────────────────────────────────────────────────────────────
 
     async pause(infoHash: string): Promise<void> {
@@ -1059,6 +1265,9 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             }
 
             // Um slot foi liberado — processar a fila
+            this.seedingSet.delete(infoHash);
+            this._scheduleSeeds();
+            this.persistSession();
             this._processQueue();
         });
     }
@@ -1066,8 +1275,19 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     // ── resume ──────────────────────────────────────────────────────────────────
 
     async resume(infoHash: string, admitted = false): Promise<void> {
+        const completed = this.items.get(infoHash);
+        if (completed?.progress === 1 && completed.completedAt !== undefined) {
+            await this._withLock(infoHash, async () => {
+                const item = this.items.get(infoHash);
+                if (!item || item.fileOperation) throw new Error(ErrorCodes.FILE_OPERATION_BUSY);
+                if (item.status !== 'seeding')
+                    this.items.set(infoHash, { ...item, status: 'completed' });
+            });
+            await this.applySeedingSettings();
+            return;
+        }
         if (this.diskSpace && !admitted) {
-            const work = this.admission.catch(() => { }).then(() => this.resume(infoHash, true));
+            const work = this.admission.catch(() => {}).then(() => this.resume(infoHash, true));
             this.admission = work;
             return work;
         }
@@ -1463,6 +1683,9 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 }
             }
 
+            this.seedingSet.delete(infoHash);
+            this._scheduleSeeds();
+            this.persistSession();
             // Se um download ativo foi removido, processar a fila
             if (wasActive) {
                 this._processQueue();
@@ -1543,6 +1766,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 'downloading',
                 'paused',
                 'completed',
+                'seeding',
                 'error',
                 'metadata-failed',
                 'files-not-found',
@@ -1607,7 +1831,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             }
             const folderExists = existsSync(persistedItem.destinationFolder);
 
-            let status: TorrentStatus = persistedItem.status;
+            let status: TorrentStatus =
+                persistedItem.status === 'seeding' ? 'completed' : persistedItem.status;
             if (!folderExists && persistedItem.status !== 'completed') {
                 status = 'files-not-found';
             }
@@ -1627,6 +1852,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 status,
                 destinationFolder: persistedItem.destinationFolder,
                 addedAt: persistedItem.addedAt,
+                seedingDisabled: persistedItem.seedingDisabled === true,
                 ...(persistedItem.selectedFileCount !== undefined
                     ? { selectedFileCount: persistedItem.selectedFileCount }
                     : {}),
@@ -1811,6 +2037,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 }
             }
         }
+        await this.applySeedingSettings();
     }
 
     // ── persistSession ──────────────────────────────────────────────────────────
@@ -1837,6 +2064,9 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 status: item.status,
                 destinationFolder: item.destinationFolder,
                 addedAt: item.addedAt,
+                ...(item.seedingDisabled !== undefined
+                    ? { seedingDisabled: item.seedingDisabled }
+                    : {}),
                 ...(item.completedAt !== undefined ? { completedAt: item.completedAt } : {}),
                 ...(item.elapsedMs !== undefined ? { elapsedMs: item.elapsedMs } : {}),
                 ...(selectedFileIndices !== undefined ? { selectedFileIndices } : {}),
@@ -1846,10 +2076,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 ...(files.length ? { files } : {}),
                 ...(this.confirmedMetadata.has(item.infoHash)
                     ? {
-                        torrentFileBase64: this.confirmedMetadata
-                            .get(item.infoHash)!
-                            .toString('base64'),
-                    }
+                          torrentFileBase64: this.confirmedMetadata
+                              .get(item.infoHash)!
+                              .toString('base64'),
+                      }
                     : {}),
                 ...(item.selectedFileCount !== undefined
                     ? { selectedFileCount: item.selectedFileCount }
@@ -1859,10 +2089,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                     : {}),
                 ...(cachedMeta !== undefined
                     ? {
-                        creator: cachedMeta.creator,
-                        comment: cachedMeta.comment,
-                        creationDate: cachedMeta.creationDate,
-                    }
+                          creator: cachedMeta.creator,
+                          comment: cachedMeta.comment,
+                          creationDate: cachedMeta.creationDate,
+                      }
                     : {}),
             };
         });
@@ -1902,10 +2132,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
      */
     private _withLock<T>(infoHash: string, fn: () => Promise<T>): Promise<T> {
         const prev = this.opLocks.get(infoHash) ?? Promise.resolve();
-        const next = prev.catch(() => { }).then(fn);
+        const next = prev.catch(() => {}).then(fn);
         this.opLocks.set(infoHash, next);
         // Limpar o lock quando a cadeia terminar para não acumular memória
-        next.catch(() => { }).then(() => {
+        next.catch(() => {}).then(() => {
             if (this.opLocks.get(infoHash) === next) {
                 this.opLocks.delete(infoHash);
             }

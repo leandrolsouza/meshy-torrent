@@ -125,6 +125,8 @@ function makeMockSettingsStore(initialFolder = '/downloads'): SettingsStore {
     data.set('downloadSpeedLimit', 0);
     data.set('uploadSpeedLimit', 0);
     data.set('schemaVersion', 1);
+    // Estes cenários isolam a restauração de downloads sem seeding automático.
+    data.set('seedingEnabled', false);
     return {
         get: jest.fn().mockImplementation((key: string) => data.get(key)),
         set: jest.fn().mockImplementation((key: string, value: unknown) => data.set(key, value)),
@@ -860,7 +862,6 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
         });
     });
 });
-
 
 // ─── TorrentMetadata round-trip ───────────────────────────────────────────────
 

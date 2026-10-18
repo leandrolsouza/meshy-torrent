@@ -85,7 +85,7 @@ export interface TorrentEngine {
         options?: TorrentAddOptions,
     ): Promise<TorrentInfo>;
     pause(infoHash: string): Promise<void>;
-    resume(infoHash: string): Promise<void>;
+    resume(infoHash: string, seeding?: boolean): Promise<void>;
     remove(infoHash: string, deleteFiles: boolean): Promise<void>;
     detachTorrent(infoHash: string): Promise<void>;
     getTorrentFile(infoHash: string): Buffer | undefined;
@@ -199,7 +199,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
             utp: options.utpEnabled,
             utPex: options.pexEnabled,
             maxConns: 24,
-            seedOutgoingConnections: false,
+            seedOutgoingConnections: true,
         };
         return new WebTorrent(networkOptions);
     }
@@ -357,7 +357,9 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
                 if ((torrent as Torrent & { destroyed?: boolean }).destroyed) return;
                 const previous = this.statusMap.get(hash);
                 const newStatus =
-                    previous === 'paused' || previous === 'completed' ? previous : 'downloading';
+                    previous === 'paused' || previous === 'completed' || previous === 'seeding'
+                        ? previous
+                        : 'downloading';
                 this.statusMap.set(hash, newStatus);
                 logger.info(
                     '[TorrentEngine] Status:',
@@ -414,11 +416,25 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         }
     }
 
-    async resume(infoHash: string): Promise<void> {
+    async resume(infoHash: string, seeding = false): Promise<void> {
         const torrent = this._getTorrent(infoHash);
         if (!torrent) throw new Error('Torrent não encontrado: ' + infoHash);
+        if (seeding) {
+            if (!torrent.ready) throw new Error(ErrorCodes.FILE_METADATA_UNAVAILABLE);
+            if (
+                this.getFiles(infoHash).some(
+                    (file) => file.selected && file.downloaded < file.length,
+                )
+            )
+                throw new Error(ErrorCodes.FILE_SOURCE_MISSING);
+        }
         await resumeTorrentNetwork(torrent);
-        const status = torrent.ready ? 'downloading' : 'resolving-metadata';
+        const status =
+            seeding || torrent.done
+                ? 'seeding'
+                : torrent.ready
+                  ? 'downloading'
+                  : 'resolving-metadata';
         this.statusMap.set(infoHash, status);
         logger.info('[TorrentEngine] Status:', infoHash.slice(0, 8), '->', status);
         this.emit('progress', torrentToInfo(torrent, status));
@@ -542,17 +558,37 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 
         const selected = this.selectionMap.get(infoHash) ?? new Set<number>();
 
-        return torrent.files.map((file, index) => ({
-            index,
-            name: file.name,
-            path: file.path,
-            length: file.length,
-            // Clamp: o WebTorrent pode retornar valores negativos ou acima do
-            // tamanho real após falhas de verificação de peças ou desseleção
-            // dinâmica de arquivos.
-            downloaded: Math.max(0, Math.min(file.downloaded, file.length)),
-            selected: selected.has(index),
-        }));
+        const bitfield = getBitfield(torrent);
+        return torrent.files.map((file, index) => {
+            // file.downloaded do WebTorrent subconta a última peça quando o
+            // tamanho é múltiplo exato de pieceLength. O bitfield é a evidência
+            // de verificação, inclusive antes de _checkDone num torrent pausado.
+            let verified = file.done || file.length === 0;
+            if (!verified && bitfield && torrent.pieceLength > 0 && Number.isFinite(file.offset)) {
+                verified = true;
+                const first = Math.floor(file.offset / torrent.pieceLength);
+                const last = Math.floor((file.offset + file.length - 1) / torrent.pieceLength);
+                for (let piece = first; piece <= last; piece++) {
+                    if (!bitfield.get(piece)) {
+                        verified = false;
+                        break;
+                    }
+                }
+            }
+            return {
+                index,
+                name: file.name,
+                path: file.path,
+                length: file.length,
+                // Clamp: o WebTorrent pode retornar valores negativos ou acima do
+                // tamanho real após falhas de verificação de peças ou desseleção
+                // dinâmica de arquivos.
+                downloaded: verified
+                    ? file.length
+                    : Math.max(0, Math.min(file.downloaded, file.length)),
+                selected: selected.has(index),
+            };
+        });
     }
 
     // ── setFileSelection ────────────────────────────────────────────────────────
@@ -796,7 +832,11 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
                     }
                 }
                 for (const [hash, status] of this.statusMap) {
-                    if (status === 'downloading' || status === 'resolving-metadata') {
+                    if (
+                        status === 'downloading' ||
+                        status === 'resolving-metadata' ||
+                        status === 'seeding'
+                    ) {
                         this.statusMap.set(hash, 'error');
                         logger.info(
                             '[TorrentEngine] Status:',
@@ -842,6 +882,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         if (cancelled()) throw new Error('Reinício cancelado');
         this.downloadPath = options.downloadPath;
         this.options = options;
+        this.pendingMagnets.clear();
         this.client = this._createClient(options);
         this.clientClosed = false;
         this._configureClient();
@@ -849,16 +890,20 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
             if (cancelled()) throw new Error('Reinício cancelado');
             if (item.status === 'completed' || item.status === 'error') continue;
             try {
-                if (item.status === 'paused' && item.torrentFile) {
+                if ((item.status === 'paused' || item.status === 'seeding') && item.torrentFile) {
                     await this.addTorrentBuffer(Buffer.from(item.torrentFile), true, {
                         destinationFolder: item.destinationFolder,
                         ...(item.selection ? { selectedFileIndices: [...item.selection] } : {}),
                     });
                 } else {
-                    await this.addMagnetLink(item.magnetURI, item.status === 'paused', {
-                        destinationFolder: item.destinationFolder,
-                        ...(item.selection ? { selectedFileIndices: [...item.selection] } : {}),
-                    });
+                    await this.addMagnetLink(
+                        item.magnetURI,
+                        item.status === 'paused' || item.status === 'seeding',
+                        {
+                            destinationFolder: item.destinationFolder,
+                            ...(item.selection ? { selectedFileIndices: [...item.selection] } : {}),
+                        },
+                    );
                 }
                 if (item.selection) {
                     const torrent = this._getTorrent(item.infoHash);
@@ -924,11 +969,8 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         });
 
         torrent.on('done', () => {
-            this.statusMap.set(torrent.infoHash, 'completed');
-            logger.info('[TorrentEngine] Status:', torrent.infoHash.slice(0, 8), '-> completed');
-            void this._stopNetwork(torrent).catch((err) =>
-                this.emit('error', torrent.infoHash, err),
-            );
+            this.statusMap.set(torrent.infoHash, 'seeding');
+            logger.info('[TorrentEngine] Status:', torrent.infoHash.slice(0, 8), '-> seeding');
             this.emit('done', torrent.infoHash);
         });
 
