@@ -17,6 +17,13 @@ interface AddTorrentModalProps {
 const FOCUSABLE_SEL =
     'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex="0"]';
 
+function getSourceName(source: TorrentSource | null): string | undefined {
+    if (!source) return undefined;
+    if (source.kind === 'file') return source.filePath.split(/[\\/]/).pop();
+    if (source.kind === 'buffer') return source.name;
+    return new URLSearchParams(source.magnetUri.split('?')[1]).get('dn') || undefined;
+}
+
 /** Todos os caminhos de adição passam por metadados → confirmação → transferência. */
 export function AddTorrentModal({
     isOpen,
@@ -33,7 +40,8 @@ export function AddTorrentModal({
     const [spaceError, setSpaceError] = useState<string | null>(null);
     const [spaceLoading, setSpaceLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [preparing, setPreparing] = useState(false);
+    const [preparationSource, setPreparationSource] = useState<TorrentSource | null>(null);
+    const preparing = preparationSource !== null;
     const [confirming, setConfirming] = useState(false);
     const [folderLoading, setFolderLoading] = useState(false);
     const [remainingCount, setRemainingCount] = useState(0);
@@ -64,7 +72,7 @@ export function AddTorrentModal({
             requestRef.current = requestId;
             currentSource.current = source;
             setCanRetry(true);
-            setPreparing(true);
+            setPreparationSource(source);
             setPreview(null);
             setSpace(null);
             setError(null);
@@ -79,7 +87,7 @@ export function AddTorrentModal({
                 if (mounted.current && requestRef.current === requestId)
                     setError(intl.formatMessage({ id: 'addTorrent.errorGeneric' }));
             } finally {
-                if (mounted.current && requestRef.current === requestId) setPreparing(false);
+                if (mounted.current && requestRef.current === requestId) setPreparationSource(null);
             }
         },
         [cancelRequest, intl],
@@ -165,9 +173,9 @@ export function AddTorrentModal({
     }, [isOpen, preview, destinationFolder, selectedIndices, intl]);
 
     useEffect(() => {
-        if (!isOpen || !preview || inline) return;
+        if (!isOpen || (!preview && !preparing && !error) || inline) return;
         containerRef.current?.querySelector<HTMLElement>(FOCUSABLE_SEL)?.focus();
-    }, [isOpen, preview, inline]);
+    }, [isOpen, preview, preparing, error, inline]);
     useEffect(() => {
         if (batchFinished) containerRef.current?.querySelector<HTMLElement>('button')?.focus();
     }, [batchFinished]);
@@ -179,7 +187,7 @@ export function AddTorrentModal({
         currentSource.current = null;
         setCanRetry(false);
         setPreview(null);
-        setPreparing(false);
+        setPreparationSource(null);
         setError(null);
         setMagnetUri('');
         setImportResults([]);
@@ -355,6 +363,7 @@ export function AddTorrentModal({
         preview?.files
             .filter((file) => selectedIndices.includes(file.index))
             .reduce((sum, file) => sum + file.length, 0) ?? 0;
+    const preparationName = getSourceName(preparationSource);
     const content = (
         <>
             {importResults.length > 0 && (
@@ -377,9 +386,6 @@ export function AddTorrentModal({
                 </button>
             ) : (
                 <>
-                    {preparing && (
-                        <p role="status">{intl.formatMessage({ id: 'addTorrent.preparing' })}</p>
-                    )}
                     {remainingCount > 0 && (
                         <p>
                             {intl.formatMessage(
@@ -388,7 +394,38 @@ export function AddTorrentModal({
                             )}
                         </p>
                     )}
-                    {preview ? (
+                    {preparing ? (
+                        <>
+                            <div
+                                className={styles.preparationStatus}
+                                role="status"
+                                aria-atomic="true"
+                            >
+                                <span className={styles.preparationSpinner} aria-hidden="true" />
+                                <div className={styles.preparationDetails}>
+                                    <h3 className={styles.preparationTitle}>
+                                        {intl.formatMessage({ id: 'addTorrent.preparingTitle' })}
+                                    </h3>
+                                    {preparationName && (
+                                        <p className={styles.preparationName}>{preparationName}</p>
+                                    )}
+                                    <p>{intl.formatMessage({ id: 'addTorrent.preparing' })}</p>
+                                    {preparationSource.kind === 'magnet' && (
+                                        <p className={styles.preparationHint}>
+                                            {intl.formatMessage({
+                                                id: 'addTorrent.preparingMagnetHint',
+                                            })}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            <div className={styles.actions}>
+                                <button type="button" className="btn" onClick={close}>
+                                    {intl.formatMessage({ id: 'common.cancel' })}
+                                </button>
+                            </div>
+                        </>
+                    ) : preview ? (
                         <>
                             <h3 className={styles.previewName}>{preview.name}</h3>
                             <p>
