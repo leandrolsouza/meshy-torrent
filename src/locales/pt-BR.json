@@ -216,6 +216,8 @@
     "error.operation.failed": "Ocorreu um erro inesperado.",
     "downloads.speedLimits.error": "Erro ao aplicar seleção de arquivos.",
     "addTorrent.preparing": "Obtendo a lista de arquivos. O conteúdo só será baixado após sua confirmação.",
+    "addTorrent.preparingTitle": "Buscando arquivos do torrent…",
+    "addTorrent.preparingMagnetHint": "A busca depende de outros participantes da rede e pode levar até um minuto.",
     "addTorrent.remaining": "{count, plural, one {Mais # torrent aguardando revisão} other {Mais # torrents aguardando revisão}}",
     "addTorrent.selectedSize": "Tamanho selecionado: {size}",
     "addTorrent.checkingSpace": "Verificando espaço em disco…",

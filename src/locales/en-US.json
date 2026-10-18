@@ -216,6 +216,8 @@
     "error.operation.failed": "An unexpected error occurred.",
     "downloads.speedLimits.error": "Error applying file selection.",
     "addTorrent.preparing": "Fetching the file list. Content will only download after you confirm.",
+    "addTorrent.preparingTitle": "Fetching torrent files…",
+    "addTorrent.preparingMagnetHint": "This depends on other peers on the network and may take up to a minute.",
     "addTorrent.remaining": "{count, plural, one {# more torrent awaiting review} other {# more torrents awaiting review}}",
     "addTorrent.selectedSize": "Selected size: {size}",
     "addTorrent.checkingSpace": "Checking disk space…",
