@@ -308,6 +308,22 @@ export const DownloadItem = React.memo(function DownloadItem({
         }
     }, [item.infoHash, intl]);
 
+    const handleRemove = useCallback(
+        async (deleteFiles: boolean): Promise<void> => {
+            setIsConfirmDialogOpen(false);
+            setActionError(null);
+            try {
+                const response = await onRemove(item.infoHash, deleteFiles);
+                if (!response.success) {
+                    setActionError(resolveErrorMessage(intl, response.error));
+                }
+            } catch {
+                setActionError(intl.formatMessage({ id: 'error.operation.failed' }));
+            }
+        },
+        [intl, item.infoHash, onRemove],
+    );
+
     // ── Context menu handler (Task 5.4) ─────────────────────────────────────
     const handleContextMenu = useCallback(
         (e: React.MouseEvent) => {
@@ -721,22 +737,8 @@ export const DownloadItem = React.memo(function DownloadItem({
                         { id: 'downloads.confirmRemove.message' },
                         { name: item.name },
                     )}
-                    onConfirmKeepFiles={() => {
-                        setIsConfirmDialogOpen(false);
-                        onRemove(item.infoHash, false).then((response) => {
-                            if (!response.success) {
-                                setActionError(resolveErrorMessage(intl, response.error));
-                            }
-                        });
-                    }}
-                    onConfirmDeleteFiles={() => {
-                        setIsConfirmDialogOpen(false);
-                        onRemove(item.infoHash, true).then((response) => {
-                            if (!response.success) {
-                                setActionError(resolveErrorMessage(intl, response.error));
-                            }
-                        });
-                    }}
+                    onConfirmKeepFiles={() => void handleRemove(false)}
+                    onConfirmDeleteFiles={() => void handleRemove(true)}
                     onCancel={() => setIsConfirmDialogOpen(false)}
                 />,
                 document.body,

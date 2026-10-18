@@ -119,6 +119,35 @@ describe('DownloadItem — remoção via ConfirmDialog', () => {
         });
     });
 
+    it('chama a remoção com exclusão de arquivos quando essa opção é confirmada', async () => {
+        const onRemove = jest.fn().mockResolvedValue({ success: true });
+        const item = createItem();
+
+        renderWithIntl(<DownloadItem item={item} {...defaultProps} onRemove={onRemove} />);
+        openConfirmDialog();
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Excluir arquivos' }));
+        });
+
+        expect(onRemove).toHaveBeenCalledWith(item.infoHash, true);
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('mostra uma mensagem se a chamada de remoção rejeitar', async () => {
+        const onRemove = jest.fn().mockRejectedValue(new Error('IPC indisponível'));
+
+        renderWithIntl(<DownloadItem item={createItem()} {...defaultProps} onRemove={onRemove} />);
+        openConfirmDialog();
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Manter arquivos' }));
+        });
+
+        expect(onRemove).toHaveBeenCalledWith(createItem().infoHash, false);
+        expect(await screen.findByRole('alert')).toHaveTextContent('Ocorreu um erro inesperado.');
+    });
+
     it('não exibe erro quando onRemove retorna success', async () => {
         const onRemove = jest.fn().mockResolvedValue({ success: true });
 
