@@ -1,6 +1,6 @@
 // ─── Métricas de operação ─────────────────────────────────────────────────────
 //
-// Coleta métricas in-memory sobre a operação do Meshy: contadores de erro,
+// Coleta métricas in-memory sobre a operação do Meshy Torrent: contadores de erro,
 // latência de chamadas IPC, uptime, e contadores de operações.
 //
 // Persiste snapshots periódicos em disco (a cada 5 minutos) para análise

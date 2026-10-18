@@ -1,4 +1,4 @@
-# Instruções para agentes — Meshy
+# Instruções para agentes — Meshy Torrent
 
 ## Escopo e leitura
 
@@ -13,7 +13,7 @@ o manifesto atual usa Electron 44 e há implementações internas em classes.
 
 ## Projeto e fronteiras
 
-Meshy é um cliente BitTorrent desktop multiplataforma, com Electron, WebTorrent,
+Meshy Torrent é um cliente BitTorrent desktop multiplataforma, com Electron, WebTorrent,
 React 19, Zustand, react-intl e TypeScript em modo strict.
 
 | Área                              | Responsabilidade                                           | Instruções locais                                                     |

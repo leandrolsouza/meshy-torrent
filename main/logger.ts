@@ -107,7 +107,7 @@ export interface ScopedLogger {
 }
 
 export function createScopedLogger(base: Logger, baseCtx: LogContext): ScopedLogger {
-    const prefix = baseCtx.channel ? `[${baseCtx.channel}]` : '[Meshy]';
+    const prefix = baseCtx.channel ? `[${baseCtx.channel}]` : '[Meshy Torrent]';
 
     return {
         info(message: string, ctx?: LogContext): void {

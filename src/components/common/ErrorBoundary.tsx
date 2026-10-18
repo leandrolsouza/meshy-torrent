@@ -66,7 +66,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
                     <p style={{ color: '#666', marginBottom: 16 }}>
                         <FormattedMessage
                             id="errorBoundary.message"
-                            defaultMessage="O Meshy encontrou um erro inesperado. Tente recarregar a janela."
+                            defaultMessage="O Meshy Torrent encontrou um erro inesperado. Tente recarregar a janela."
                         />
                     </p>
                     {this.state.error && (

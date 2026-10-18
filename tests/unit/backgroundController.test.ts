@@ -37,8 +37,8 @@ function setup(closeToTray = true) {
     ];
     const manager = Object.assign(new EventEmitter(), {
         getAll: () => items,
-        pause: jest.fn(async () => {}),
-        resume: jest.fn(async () => {}),
+        pause: jest.fn(async () => { }),
+        resume: jest.fn(async () => { }),
         persistSession: jest.fn(),
     });
     const showWindow = jest.fn();
@@ -69,10 +69,10 @@ test('fechar oculta apenas com preferência ativa e conserva sessão', () => {
     controller.dispose();
     expect(tray.destroy).toHaveBeenCalled();
 });
-test('Encerrar Meshy não fica preso no handler de ocultar janela', () => {
+test('Encerrar Meshy Torrent não fica preso no handler de ocultar janela', () => {
     const { controller, window, tray } = setup();
     const menu = tray.setContextMenu.mock.calls[0]![0];
-    menu.find((item: { label: string }) => item.label === 'Quit Meshy').click();
+    menu.find((item: { label: string }) => item.label === 'Quit Meshy Torrent').click();
     expect(app.quit).toHaveBeenCalled();
     app.emit('before-quit');
     const preventDefault = jest.fn();

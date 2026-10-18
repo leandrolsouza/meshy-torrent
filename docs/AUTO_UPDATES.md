@@ -1,6 +1,6 @@
 # Atualizações do aplicativo
 
-O Meshy usa `electron-updater` 6, compatível com o electron-builder 26 do projeto,
+O Meshy Torrent usa `electron-updater` 6, compatível com o electron-builder 26 do projeto,
 para atualizar o instalador NSIS no Windows x64 pelo repositório público
 `leandrolsouza/meshy-torrent` no GitHub Releases. Builds Windows x64 sem certificado
 também podem atualizar, limitados ao feed oficial em HTTPS. macOS, Linux e
@@ -43,7 +43,7 @@ componentes, e revisões impedem que uma resposta antiga sobrescreva estado novo
 
 O projeto ainda não possui certificado Authenticode. Builds Windows x64 sem
 `publisherName` verificam o SHA-512 do instalador publicado em `latest.yml` e só
-consultam o repositório oficial do Meshy pelo GitHub em HTTPS. Isso detecta um
+consultam o repositório oficial do Meshy Torrent pelo GitHub em HTTPS. Isso detecta um
 arquivo que não corresponde ao manifesto recebido, mas não identifica o editor nem
 protege contra comprometimento da conta ou do processo de publicação. O app informa
 essa limitação na ajuda do controle de atualização. Em desenvolvimento, a mensagem
@@ -95,8 +95,8 @@ precisam ser instaladas manualmente uma vez para obter o atualizador habilitado.
 4. Conclua a homologação, incluindo atualização entre duas versões da mesma linha.
 5. Crie a tag correspondente ao manifesto, como `v0.1.0-beta.5`.
 6. Anexe ao mesmo GitHub Release todos os arquivos:
-    - `Meshy-<versão>-win-x64-setup.exe`
-    - `Meshy-<versão>-win-x64-setup.exe.blockmap`
+    - `Meshy Torrent-<versão>-win-x64-setup.exe`
+    - `Meshy Torrent-<versão>-win-x64-setup.exe.blockmap`
     - `latest.yml`
     - `SHA256SUMS`
 7. Marque versões `-beta.N` como **pre-release**; versões estáveis devem ser

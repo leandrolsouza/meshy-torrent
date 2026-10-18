@@ -1,16 +1,42 @@
 {
     "appId": "org.meshy.client",
-    "productName": "Meshy",
-    "directories": { "output": "dist" },
-    "files": ["out/**/*", "icon.png", "package.json", "LICENSE", "!node_modules/react-icons/**/*"],
+    "productName": "Meshy Torrent",
+    "directories": {
+        "output": "dist"
+    },
+    "files": [
+        "out/**/*",
+        "icon.png",
+        "package.json",
+        "LICENSE",
+        "!node_modules/react-icons/**/*"
+    ],
     "extraResources": [
-        { "from": ".build-resources/THIRD_PARTY_NOTICES.txt", "to": "THIRD_PARTY_NOTICES.txt" }
+        {
+            "from": ".build-resources/THIRD_PARTY_NOTICES.txt",
+            "to": "THIRD_PARTY_NOTICES.txt"
+        }
     ],
     "afterPack": "scripts/verify-distribution.cjs",
-    "asarUnpack": ["**/*.node"],
+    "asarUnpack": [
+        "**/*.node"
+    ],
     "icon": ".build-resources/icon.png",
-    "publish": [{ "provider": "github", "owner": "leandrolsouza", "repo": "meshy-torrent" }],
-    "protocols": [{ "name": "BitTorrent magnet", "schemes": ["magnet"] }],
+    "publish": [
+        {
+            "provider": "github",
+            "owner": "leandrolsouza",
+            "repo": "meshy-torrent"
+        }
+    ],
+    "protocols": [
+        {
+            "name": "BitTorrent magnet",
+            "schemes": [
+                "magnet"
+            ]
+        }
+    ],
     "fileAssociations": [
         {
             "ext": "torrent",
@@ -21,7 +47,14 @@
         }
     ],
     "win": {
-        "target": [{ "target": "nsis", "arch": ["x64"] }],
+        "target": [
+            {
+                "target": "nsis",
+                "arch": [
+                    "x64"
+                ]
+            }
+        ],
         "verifyUpdateCodeSignature": true
     },
     "nsis": {
@@ -30,10 +63,19 @@
         "allowToChangeInstallationDirectory": true,
         "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
     },
-    "mac": { "target": "dmg", "category": "public.app-category.utilities" },
+    "mac": {
+        "target": "dmg",
+        "category": "public.app-category.utilities"
+    },
     "linux": {
-        "target": ["deb", "AppImage"],
+        "target": [
+            "deb",
+            "AppImage"
+        ],
         "category": "Network",
-        "mimeTypes": ["application/x-bittorrent", "x-scheme-handler/magnet"]
+        "mimeTypes": [
+            "application/x-bittorrent",
+            "x-scheme-handler/magnet"
+        ]
     }
 }

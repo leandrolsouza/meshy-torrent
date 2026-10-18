@@ -25,7 +25,7 @@ export function createBackgroundController(options: {
             ['downloading', 'resolving-metadata', 'queued'].includes(item.status),
         );
         const paused = items.filter((item) => item.status === 'paused' && !item.fileOperation);
-        tray.setToolTip(`Meshy — ${active.length} ${text('tray.activeDownloads')}`);
+        tray.setToolTip(`Meshy Torrent — ${active.length} ${text('tray.activeDownloads')}`);
         const template: MenuItemConstructorOptions[] = [
             { label: text('tray.show'), click: options.showWindow },
             { type: 'separator' },
@@ -66,10 +66,10 @@ export function createBackgroundController(options: {
                 }
             }
             options.manager.persistSession();
-            if (failed) dialog.showErrorBox('Meshy', text('tray.operationFailed'));
+            if (failed) dialog.showErrorBox('Meshy Torrent', text('tray.operationFailed'));
         } catch (error) {
             logger.warn('[Main] Falha em ação da bandeja:', error);
-            dialog.showErrorBox('Meshy', text('tray.operationFailed'));
+            dialog.showErrorBox('Meshy Torrent', text('tray.operationFailed'));
         } finally {
             busy = false;
             update();

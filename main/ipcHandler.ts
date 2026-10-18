@@ -250,7 +250,7 @@ export function attachWindowEvents(
 }
 
 /**
- * Registers all IPC handlers for the Meshy application.
+ * Registers all IPC handlers for the Meshy Torrent application.
  *
  * IMPORTANT: Call this only ONCE during the app lifecycle. IPC handlers
  * registered via `ipcMain.handle` are global — calling this a second time
@@ -748,6 +748,26 @@ export function registerIpcHandlers(
         },
     );
 
+    trackedHandle(
+        'torrent:toggle-seed',
+        async (_event, payload: unknown): Promise<IPCResponse<DownloadItem>> => {
+            try {
+                if (torrentEngine?.isRestarting()) return fail(ErrorCodes.ENGINE_RESTARTING);
+                const result = validatePayload<{ infoHash: string }>(payload, infoHashSchema);
+                if (!result.valid || !/^[a-f0-9]{40}$/i.test(result.data.infoHash))
+                    return fail(ErrorCodes.INVALID_PARAMS);
+                return ok(
+                    await withTimeout(
+                        downloadManager.toggleSeed(result.data.infoHash),
+                        'torrent:toggle-seed',
+                    ),
+                );
+            } catch (err) {
+                return failWithLog('torrent:toggle-seed', err);
+            }
+        },
+    );
+
     // ── torrent:pause ─────────────────────────────────────────────────────────
     trackedHandle('torrent:pause', async (_event, payload: unknown): Promise<IPCResponse<void>> => {
         try {
@@ -900,6 +920,12 @@ export function registerIpcHandlers(
                     });
                 }
 
+                if (
+                    partial.seedingEnabled !== undefined ||
+                    partial.maxConcurrentSeeders !== undefined
+                ) {
+                    await downloadManager.applySeedingSettings();
+                }
                 const updated = settingsManager.get();
                 applyBandwidth(networkChanged);
                 return ok(updated);
@@ -1344,7 +1370,7 @@ export function registerIpcHandlers(
                 }
 
                 // Verificar se o download está concluído
-                if (item.status !== 'completed') {
+                if (item.status !== 'completed' && item.status !== 'seeding') {
                     return fail(ErrorCodes.DESTINATION_NOT_COMPLETED);
                 }
 

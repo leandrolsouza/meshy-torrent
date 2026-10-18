@@ -9,7 +9,7 @@ import App from './App';
 // In development without Electron, this prevents cryptic runtime errors.
 if (typeof window.meshy === 'undefined') {
     console.warn(
-        '[Meshy] window.meshy is not available. ' +
+        '[Meshy Torrent] window.meshy is not available. ' +
         'The app must run inside Electron with the preload script configured.',
     );
 }

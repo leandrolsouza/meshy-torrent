@@ -1,4 +1,4 @@
-# 🛠️ Meshy — Guia de Manutenção
+# 🛠️ Meshy Torrent — Guia de Manutenção
 
 > Documento de referência para tarefas de manutenção do projeto.  
 > Cada item contém contexto, objetivo e um prompt pronto para executar com a IA.
@@ -30,7 +30,7 @@
 **Prompt:**
 
 ```
-Você é um engenheiro sênior. No projeto Meshy em `e:\Desenvolvimento\GiHub\Meshy`,
+Você é um engenheiro sênior. No projeto Meshy Torrent em `e:\Desenvolvimento\GiHub\meshy-torrent`,
 audite o `package.json` e o `package-lock.json`. Identifique:
 (1) dependências com versões desatualizadas relevantes,
 (2) vulnerabilidades conhecidas,
@@ -47,7 +47,7 @@ atualização é segura ou pode gerar breaking changes. Produza um relatório em
 
 ## 2. Atualização da Stack
 
-**Por quê:** O Meshy é construído sobre peças que evoluem de forma acoplada — Electron, Node.js embutido, Chromium, Vite, electron-vite e TypeScript. Atualizar só os pacotes npm sem considerar essa cadeia pode introduzir incompatibilidades silenciosas. Por outro lado, ficar muito atrás dessas versões significa perder correções de segurança críticas (especialmente no Chromium e no Node.js do Electron) e APIs modernas.
+**Por quê:** O Meshy Torrent é construído sobre peças que evoluem de forma acoplada — Electron, Node.js embutido, Chromium, Vite, electron-vite e TypeScript. Atualizar só os pacotes npm sem considerar essa cadeia pode introduzir incompatibilidades silenciosas. Por outro lado, ficar muito atrás dessas versões significa perder correções de segurança críticas (especialmente no Chromium e no Node.js do Electron) e APIs modernas.
 
 **Stack atual (referência):**
 
@@ -78,7 +78,7 @@ npx npm-check-updates --target minor  # somente minor/patch (ignora major)
 
 ```
 Você é um engenheiro sênior especialista em Electron. Execute uma atualização
-completa da stack do projeto Meshy em `e:\Desenvolvimento\GiHub\Meshy`.
+completa da stack do projeto Meshy Torrent em `e:\Desenvolvimento\GiHub\meshy-torrent`.
 
 **0. Levantamento com npm-check-updates**
 - Execute `npx npm-check-updates` para obter a lista completa de pacotes
@@ -148,7 +148,7 @@ Documente em `.agents/tasks/stack-update.md`:
 **Prompt:**
 
 ```
-Você é um engenheiro de qualidade. No projeto Meshy em `e:\Desenvolvimento\GiHub\Meshy`,
+Você é um engenheiro de qualidade. No projeto Meshy Torrent em `e:\Desenvolvimento\GiHub\meshy-torrent`,
 execute `npm run test:coverage` e analise o relatório. Identifique os módulos mais
 críticos sem cobertura (priorize `main/torrentEngine.ts`, `main/ipcHandler.ts`,
 `shared/validators.ts`).
@@ -170,7 +170,7 @@ Jest + Testing Library. Todos os testes devem passar ao final.
 ```
 Você é um especialista em segurança Electron. Analise os arquivos
 `main/ipcHandler.ts`, `main/payloadValidator.ts`, `main/validators.ts` e
-`electron/preload.ts` no projeto `e:\Desenvolvimento\GiHub\Meshy`.
+`electron/preload.ts` no projeto `e:\Desenvolvimento\GiHub\meshy-torrent`.
 
 Verifique:
 (1) se toda entrada vinda do renderer é validada antes de ser usada no main process,
@@ -192,7 +192,7 @@ Corrija os problemas encontrados e documente as alterações.
 **Prompt:**
 
 ```
-Você é um engenheiro de manutenção. No projeto Meshy em `e:\Desenvolvimento\GiHub\Meshy`,
+Você é um engenheiro de manutenção. No projeto Meshy Torrent em `e:\Desenvolvimento\GiHub\meshy-torrent`,
 encontre:
 (1) componentes React importados mas nunca renderizados,
 (2) funções exportadas em `shared/` que nenhum arquivo importa,
@@ -215,7 +215,7 @@ precisaria de revisão manual.
 
 ```
 Você é um engenheiro sênior. Revise o tratamento de erros em todo o projeto
-Meshy (`e:\Desenvolvimento\GiHub\Meshy`). Verifique:
+Meshy Torrent (`e:\Desenvolvimento\GiHub\meshy-torrent`). Verifique:
 (1) todos os `catch` que apenas fazem `console.log` sem propagar ou logar via `electron-log`,
 (2) promises sem `.catch()` ou `await` sem `try/catch` no processo main,
 (3) se o `ErrorBoundary` em `src/components/common/ErrorBoundary.tsx` está cobrindo
@@ -237,7 +237,7 @@ Corrija os casos encontrados.
 
 ```
 Você é um especialista em performance React. Analise os componentes em
-`e:\Desenvolvimento\GiHub\Meshy\src\components\DownloadList` e `DownloadDetails`.
+`e:\Desenvolvimento\GiHub\meshy-torrent\src\components\DownloadList` e `DownloadDetails`.
 
 O store Zustand emite atualizações frequentes via `onProgress`. Identifique:
 (1) componentes que re-renderizam sem necessidade (selectors desnecessariamente
@@ -260,7 +260,7 @@ Aplique as otimizações e justifique cada uma.
 
 ```
 Você é um especialista em acessibilidade web. Revise os componentes React em
-`e:\Desenvolvimento\GiHub\Meshy\src\components`.
+`e:\Desenvolvimento\GiHub\meshy-torrent\src\components`.
 
 Verifique:
 (1) se todos os botões têm `aria-label` quando não possuem texto visível,
@@ -283,8 +283,8 @@ Aplique as correções necessárias conforme WCAG 2.1 AA.
 **Prompt:**
 
 ```
-Você é um engenheiro de documentação. Leia todo o projeto Meshy em
-`e:\Desenvolvimento\GiHub\Meshy` — especialmente `package.json`, `main/index.ts`,
+Você é um engenheiro de documentação. Leia todo o projeto Meshy Torrent em
+`e:\Desenvolvimento\GiHub\meshy-torrent` — especialmente `package.json`, `main/index.ts`,
 `shared/types.ts` e os componentes principais.
 
 Reescreva o `README.md` para incluir:
@@ -309,7 +309,7 @@ Mantenha em português.
 **Prompt:**
 
 ```
-Você é um engenheiro de observabilidade. Analise `e:\Desenvolvimento\GiHub\Meshy\main\logger.ts`
+Você é um engenheiro de observabilidade. Analise `e:\Desenvolvimento\GiHub\meshy-torrent\main\logger.ts`
 e `main\metrics.ts`.
 
 Verifique:
@@ -334,7 +334,7 @@ erro de download, mudança de estado).
 **Prompt:**
 
 ```
-Você é um engenheiro sênior TypeScript. No projeto Meshy (`e:\Desenvolvimento\GiHub\Meshy`),
+Você é um engenheiro sênior TypeScript. No projeto Meshy Torrent (`e:\Desenvolvimento\GiHub\meshy-torrent`),
 revise os arquivos `tsconfig.json` disponíveis e habilite as flags de rigor que
 ainda não estejam ativas:
 - `strictNullChecks`

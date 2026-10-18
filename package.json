@@ -1,7 +1,7 @@
 {
     "name": "meshy",
     "version": "0.1.0-beta.6",
-    "description": "Meshy — cliente torrent desktop multiplataforma",
+    "description": "Meshy Torrent — cliente torrent desktop multiplataforma",
     "main": "out/main/index.mjs",
     "scripts": {
         "dev": "electron-vite dev",
@@ -33,7 +33,7 @@
         "desktop",
         "electron"
     ],
-    "author": "Contribuidores do Meshy",
+    "author": "Contribuidores do Meshy Torrent",
     "homepage": "https://github.com/leandrolsouza/meshy-torrent#readme",
     "repository": {
         "type": "git",

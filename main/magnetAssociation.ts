@@ -54,7 +54,7 @@ export function createMagnetAssociation({
     defaultApp = process.defaultApp ?? false,
     writeRegistryValue: writeValue = writeRegistryValue,
 }: MagnetAssociationDependencies) {
-    const applicationName = defaultApp ? 'Meshy (Dev)' : 'Meshy';
+    const applicationName = defaultApp ? 'Meshy Torrent (Dev)' : 'Meshy Torrent';
     const applicationId = defaultApp ? 'org.meshy.client.dev' : 'org.meshy.client';
     const progId = `${applicationId}.magnet`;
     const capabilities = `Software\\${applicationId}\\Capabilities`;
@@ -70,7 +70,7 @@ export function createMagnetAssociation({
                 isDefault =
                     isDefault &&
                     win32.resolve(handler.path).toLowerCase() ===
-                        win32.resolve(executable).toLowerCase();
+                    win32.resolve(executable).toLowerCase();
             } catch {
                 isDefault = false;
             }
@@ -88,7 +88,7 @@ export function createMagnetAssociation({
                         .map(quoteWindowsArgument)
                         .concat('"%1"')
                         .join(' ');
-                    // Capabilities tornam o Meshy uma opção nos Aplicativos padrão, inclusive em dev.
+                    // Capabilities tornam o Meshy Torrent uma opção nos Aplicativos padrão, inclusive em dev.
                     await writeValue(classKey, null, `${applicationName} magnet`);
                     await writeValue(classKey, 'URL Protocol', '');
                     await writeValue(
@@ -101,7 +101,7 @@ export function createMagnetAssociation({
                     await writeValue(
                         `HKCU\\${capabilities}`,
                         'ApplicationDescription',
-                        'Meshy BitTorrent client',
+                        'Meshy Torrent BitTorrent client',
                     );
                     await writeValue(`HKCU\\${capabilities}\\URLAssociations`, 'magnet', progId);
                     await writeValue(

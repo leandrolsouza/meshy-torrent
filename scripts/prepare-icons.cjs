@@ -10,7 +10,7 @@ if (process.versions.electron) {
         .then(() => {
             const root = join(__dirname, '..');
             const icon = nativeImage.createFromPath(join(root, 'icon.png'));
-            if (icon.isEmpty()) throw new Error('Ícone do Meshy indisponível');
+            if (icon.isEmpty()) throw new Error('Ícone do Meshy Torrent indisponível');
             const destination = join(root, '.build-resources');
             mkdirSync(destination, { recursive: true });
             writeFileSync(

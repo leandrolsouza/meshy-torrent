@@ -12,8 +12,8 @@ function setup(platform: NodeJS.Platform = 'win32', defaultApp = true) {
             icon: {} as Electron.NativeImage,
         })),
     };
-    const writeRegistryValue = jest.fn(async () => {});
-    const openExternal = jest.fn(async () => {});
+    const writeRegistryValue = jest.fn(async () => { });
+    const openExternal = jest.fn(async () => { });
     const association = createMagnetAssociation({
         app,
         platform,
@@ -30,7 +30,7 @@ test('registro legado não afirma ser padrão quando o Windows ainda resolve qBi
     expect(await association.register()).toEqual({
         isDefault: false,
         canOpenDefaultApps: true,
-        applicationName: 'Meshy (Dev)',
+        applicationName: 'Meshy Torrent (Dev)',
     });
     expect(app.isDefaultProtocolClient).toHaveBeenCalled();
     expect(app.getApplicationInfoForProtocol).toHaveBeenCalledWith('magnet:');
@@ -48,7 +48,7 @@ test('registro de desenvolvimento oferece Meshy nos padrões e preserva caminho 
     const mapping = writes.find(([key]) => key.endsWith('\\URLAssociations'));
     expect(mapping?.slice(1)).toEqual(['magnet', 'org.meshy.client.dev.magnet']);
     expect(writes.find(([key]) => key === 'HKCU\\Software\\RegisteredApplications')?.[1]).toBe(
-        'Meshy (Dev)',
+        'Meshy Torrent (Dev)',
     );
     expect(writes.every(([key]) => key.startsWith('HKCU\\') && !key.includes('UserChoice'))).toBe(
         true,
@@ -88,7 +88,7 @@ test('abre somente a página fixa do sistema para o aplicativo registrado', asyn
     const { association, openExternal } = setup();
     await association.openDefaultApps();
     expect(openExternal).toHaveBeenCalledWith(
-        'ms-settings:defaultapps?registeredAppUser=Meshy%20(Dev)',
+        'ms-settings:defaultapps?registeredAppUser=Meshy%20Torrent%20(Dev)',
     );
 });
 

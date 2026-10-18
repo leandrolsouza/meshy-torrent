@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
+import { mkdirSync, readFileSync } from 'fs';
 import { isAllowedRendererUrl, rendererSecurity } from './rendererSecurity';
 import { createSettingsManager } from './settingsManager';
 import { createTorrentEngine } from './torrentEngine';
@@ -19,7 +20,6 @@ import { createBandwidthController } from './bandwidthController';
 import { createDownloadDiagnostics } from './downloadDiagnostics';
 import { createMagnetAssociation } from './magnetAssociation';
 import updater from 'electron-updater';
-import { readFileSync } from 'fs';
 import { load, FAILSAFE_SCHEMA } from 'js-yaml';
 import { createUpdateManager } from './updateManager';
 import { getUpdateDisabledReason } from './updatePolicy';
@@ -28,10 +28,20 @@ import enUS from '../src/locales/en-US.json';
 
 import ElectronStore from 'electron-store';
 
+// ─── Caminho de dados do usuário ──────────────────────────────────────────────
+// Preserva o diretório legado "Meshy" independente do productName atual,
+// garantindo que configurações e sessão de downloads de instalações anteriores
+// não se percam ao atualizar. Deve ser chamado antes de app.ready.
+{
+    const legacyUserData = join(app.getPath('appData'), 'Meshy');
+    mkdirSync(legacyUserData, { recursive: true });
+    app.setPath('userData', legacyUserData);
+}
+
 // Module-level references so the before-quit handler can access them
 let downloadManager: DownloadManager | null = null;
 let desktopReady = false;
-let showMainWindow = () => {};
+let showMainWindow = () => { };
 let background: ReturnType<typeof createBackgroundController> | undefined;
 const externalTorrents = createExternalTorrentInbox(() => {
     if (!desktopReady) return;
@@ -80,8 +90,8 @@ process.on('uncaughtException', (error) => {
     // Exibir diálogo de erro para o usuário (se o app ainda estiver funcional)
     try {
         dialog.showErrorBox(
-            'Meshy — Erro inesperado',
-            `O Meshy encontrou um erro inesperado e precisa ser reiniciado.\n\n${error.message}`,
+            'Meshy Torrent — Erro inesperado',
+            `O Meshy Torrent encontrou um erro inesperado e precisa ser reiniciado.\n\n${error.message}`,
         );
     } catch {
         // Se o diálogo falhar, apenas encerrar
@@ -113,7 +123,7 @@ process.on('unhandledRejection', (reason) => {
 // ─── Factory para criação de BrowserWindow ────────────────────────────────────
 
 /**
- * Cria e configura uma nova BrowserWindow com as opções padrão do Meshy.
+ * Cria e configura uma nova BrowserWindow com as opções padrão do Meshy Torrent.
  * Centraliza a criação para evitar duplicação entre o boot inicial e o
  * handler de `activate` (macOS).
  */
@@ -145,27 +155,27 @@ function createMainWindow(): BrowserWindow {
     window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
         const cspDirectives = isDev
             ? [
-                  "default-src 'self'",
-                  "script-src 'self' 'unsafe-inline'",
-                  "style-src 'self' 'unsafe-inline'",
-                  "img-src 'self' data:",
-                  "font-src 'self'",
-                  "connect-src 'self' ws://localhost:*",
-                  "frame-src 'none'",
-                  "object-src 'none'",
-                  "base-uri 'none'",
-              ]
+                "default-src 'self'",
+                "script-src 'self' 'unsafe-inline'",
+                "style-src 'self' 'unsafe-inline'",
+                "img-src 'self' data:",
+                "font-src 'self'",
+                "connect-src 'self' ws://localhost:*",
+                "frame-src 'none'",
+                "object-src 'none'",
+                "base-uri 'none'",
+            ]
             : [
-                  "default-src 'self'",
-                  "script-src 'self'",
-                  "style-src 'self' 'unsafe-inline'",
-                  "img-src 'self' data:",
-                  "font-src 'self'",
-                  "connect-src 'self'",
-                  "frame-src 'none'",
-                  "object-src 'none'",
-                  "base-uri 'none'",
-              ];
+                "default-src 'self'",
+                "script-src 'self'",
+                "style-src 'self' 'unsafe-inline'",
+                "img-src 'self' data:",
+                "font-src 'self'",
+                "connect-src 'self'",
+                "frame-src 'none'",
+                "object-src 'none'",
+                "base-uri 'none'",
+            ];
 
         callback({
             responseHeaders: {

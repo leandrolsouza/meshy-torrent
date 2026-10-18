@@ -13,7 +13,7 @@ for (const directory of [
     join(run, 'ui-downloads'),
 ])
     mkdirSync(directory, { recursive: true });
-app.setName('Meshy QA');
+app.setName('Meshy Torrent QA');
 app.setAppPath(process.env.MESHY_QA_WORKSPACE);
 app.setPath('userData', profile);
 app.setPath('sessionData', join(profile, 'session'));

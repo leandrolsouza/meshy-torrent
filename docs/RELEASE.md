@@ -1,4 +1,4 @@
-# Release beta do Meshy
+# Release beta do Meshy Torrent
 
 Escreva em inglês as notas de todas as próximas versões e os textos dos GitHub
 Releases. As notas já publicadas são registros históricos e não devem ser
@@ -34,8 +34,8 @@ cabeçalhos e ferramentas do electron-builder. Não executa o instalador nem pub
 
 Arquivos esperados para esta versão:
 
-- `dist/Meshy-0.1.0-beta.5-win-x64-setup.exe`
-- `dist/Meshy-0.1.0-beta.5-win-x64-setup.exe.blockmap`
+- `dist/Meshy Torrent-0.1.0-beta.5-win-x64-setup.exe`
+- `dist/Meshy Torrent-0.1.0-beta.5-win-x64-setup.exe.blockmap`
 - `dist/latest.yml`
 - `dist/SHA256SUMS`
 
@@ -50,8 +50,8 @@ Para conferir no PowerShell, execute na pasta dos arquivos extraídos:
 
 ```powershell
 Get-Content SHA256SUMS
-Get-FileHash -Algorithm SHA256 .\Meshy-0.1.0-beta.5-win-x64-setup.exe
-Get-AuthenticodeSignature .\Meshy-0.1.0-beta.5-win-x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\Meshy Torrent-0.1.0-beta.5-win-x64-setup.exe
+Get-AuthenticodeSignature .\Meshy Torrent-0.1.0-beta.5-win-x64-setup.exe
 ```
 
 Compare o hash calculado com `SHA256SUMS`. Um checksum não comprova a identidade
@@ -225,7 +225,7 @@ Os dois últimos itens são concluídos pelo workflow da tag. Para publicar esta
 com o commit final verificado e enviado ao repositório:
 
 ```sh
-git tag -a v0.1.0-beta.5 -m "Meshy 0.1.0-beta.5"
+git tag -a v0.1.0-beta.5 -m "Meshy Torrent 0.1.0-beta.5"
 git push origin v0.1.0-beta.5
 ```
 

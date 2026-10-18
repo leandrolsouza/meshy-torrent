@@ -138,10 +138,7 @@ try {
     await current.manager.restoreSession();
     torrent = connect(current.client, hash);
     await waitUntil(() => torrent.done, 'concluir depois de restaurar sessão', 40_000);
-    await waitUntil(
-        () => current.manager.getAll()[0].status === 'completed',
-        'registrar conclusão',
-    );
+    await waitUntil(() => current.manager.getAll()[0].status === 'seeding', 'registrar conclusão');
     const received = readFileSync(join(destination, 'payload.bin'));
     assert.equal(
         createHash('sha256').update(received).digest('hex'),
@@ -149,6 +146,42 @@ try {
     );
     findings.push(
         'sessão salva em disco, cliente recriado e download concluído com SHA-256 idêntico',
+    );
+    await current.manager.toggleSeed(hash);
+    assert.equal(current.manager.getAll()[0].status, 'completed');
+    assert.equal(torrent.wires.length, 0, 'Parar seed encerra os peers');
+    await current.manager.toggleSeed(hash);
+    assert.equal(current.manager.getAll()[0].status, 'seeding');
+    current.manager.persistSession();
+    await closeClient(current.client);
+    current = newManager();
+    await current.manager.restoreSession();
+    assert.equal(current.manager.getAll()[0].status, 'seeding', 'Sessão completa retoma seed');
+    torrent = current.client.torrents.find((item) => item.infoHash === hash);
+    // O novo receptor só conhece o peer Meshy Torrent, sem conexão ao seeder original.
+    await closeClient(seedClient);
+    const receiver = new WebTorrent(config);
+    clients.push(receiver);
+    receiver.on('error', (error) => {
+        failed = error;
+    });
+    const uploadDestination = join(root, 'upload-check');
+    mkdirSync(uploadDestination, { recursive: true });
+    const receiving = await new Promise((resolve) =>
+        receiver.add(readFileSync(torrentPath), { path: uploadDestination, announce: [] }, resolve),
+    );
+    if (!current.client.listening) await once(current.client, 'listening');
+    receiving.addPeer('127.0.0.1:' + current.client.torrentPort);
+    await waitUntil(() => receiving.done, 'Meshy Torrent enviar dados reais para novo peer', 20_000);
+    assert.equal(
+        createHash('sha256')
+            .update(readFileSync(join(uploadDestination, 'payload.bin')))
+            .digest('hex'),
+        createHash('sha256').update(content).digest('hex'),
+    );
+    assert.ok(torrent.uploaded > 0, 'Meshy Torrent reporta bytes enviados');
+    findings.push(
+        'seeding automático, stop/resume, restauração de seed e upload TCP real com SHA-256 idêntico',
     );
     await current.manager.remove(hash, false);
     assert.ok(

@@ -1,7 +1,7 @@
 // ─── Abstração de propriedades internas do WebTorrent ─────────────────────────
 //
 // O WebTorrent 2.x expõe propriedades internas não tipadas (announce, discovery,
-// wires, _startDiscovery) que o Meshy precisa acessar. Este módulo centraliza todos
+// wires, _startDiscovery) que o Meshy Torrent precisa acessar. Este módulo centraliza todos
 // os acessos inseguros com type guards, evitando casts `as unknown as { ... }`
 // espalhados pelo código.
 //
@@ -151,6 +151,16 @@ export function configureTorrentNetwork(torrent: Torrent, budget?: NetworkBudget
             };
         }
     }
+    // WebTorrent chama discovery.complete() em _checkDone sem verificar se
+    // discovery existe. Torrents completos carregados pausados ainda não têm
+    // discovery; a conclusão será reconciliada depois de retomar a rede.
+    const checkDone = t._checkDone;
+    if (typeof checkDone === 'function') {
+        t._checkDone = function (...args: unknown[]) {
+            if (t.paused && !t.discovery) return;
+            return checkDone.apply(torrent, args);
+        };
+    }
     for (const method of ['_startDiscovery', '_getMetadataFromServer', 'addWebSeed']) {
         const original = t[method];
         if (typeof original !== 'function') continue;
@@ -211,6 +221,7 @@ export async function resumeTorrentNetwork(torrent: Torrent): Promise<void> {
     const t = asRecord(torrent);
     torrent.resume();
     if (typeof t._startDiscovery === 'function') t._startDiscovery.call(torrent);
+    if (typeof t._checkDone === 'function') t._checkDone.call(torrent);
     if (!t.metadata && t.xs && typeof t._getMetadataFromServer === 'function') {
         t._getMetadataFromServer.call(torrent);
     }

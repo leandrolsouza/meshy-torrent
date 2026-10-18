@@ -48,11 +48,11 @@ async function setup(downloaded = 50, withMetadata = true, shared = false, queue
             return { infoHash: hash, status: 'paused', name: 'Archive' };
         }),
         isRestarting: () => false,
-        resume: jest.fn(async () => {}),
+        resume: jest.fn(async () => { }),
     });
-    const move = { commit: jest.fn(async () => true), rollback: jest.fn(async () => {}) };
+    const move = { commit: jest.fn(async () => true), rollback: jest.fn(async () => { }) };
     const torrentFiles = {
-        validate: jest.fn(async () => {}),
+        validate: jest.fn(async () => { }),
         existingBytes: jest.fn(async () => 70),
         copy: jest.fn(async () => move),
     };
@@ -204,7 +204,7 @@ test('erro de limpeza mantém o destino novo e informa que os originais foram co
         errorMessage: 'error.files.sourceRetained',
     });
 });
-test('arquivos usados por outro torrent do Meshy permanecem no destino original', async () => {
+test('arquivos usados por outro torrent do Meshy Torrent permanecem no destino original', async () => {
     const { manager, move } = await setup(100, true, true);
     const result = await manager.manageFiles(hash, 'move', process.cwd() + '/other');
     expect(move.commit).not.toHaveBeenCalled();

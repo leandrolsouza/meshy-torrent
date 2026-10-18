@@ -1,4 +1,4 @@
-# Meshy <version>
+# Meshy Torrent <version>
 
 <Write a brief summary of the release and its impact.>
 

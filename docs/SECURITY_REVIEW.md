@@ -38,7 +38,7 @@ npm não foi aplicado: substituiria a engine por uma versão antiga e incompatí
   não chama o classificador `isPublic` afetado pelo aviso.
 
 **Conclusão técnica:** não foi identificado uso da função afetada nos caminhos
-revisados do cliente Meshy. A exceção temporária se limita à aplicabilidade deste
+revisados do cliente Meshy Torrent. A exceção temporária se limita à aplicabilidade deste
 aviso nesta cadeia e nestas fontes. Não equivale a declarar as bibliotecas livres
 de vulnerabilidades nem a avaliar todos os possíveis destinos de rede do cliente.
 

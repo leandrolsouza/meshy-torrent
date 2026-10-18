@@ -1,4 +1,4 @@
-# Meshy
+# Meshy Torrent
 
 Cross-platform desktop BitTorrent client built with Electron, React, and WebTorrent.
 
@@ -10,7 +10,7 @@ Cross-platform desktop BitTorrent client built with Electron, React, and WebTorr
 
 ## 1. Description
 
-Meshy is a desktop BitTorrent client with a modern interface inspired by VS Code — dark theme,
+Meshy Torrent is a desktop BitTorrent client with a modern interface inspired by VS Code — dark theme,
 Activity Bar navigation, and a keyboard-friendly layout. It runs on **Windows**, **macOS**, and
 **Linux** via Electron, using WebTorrent as the download engine and React for the UI.
 
@@ -39,7 +39,7 @@ Activity Bar navigation, and a keyboard-friendly layout. It runs on **Windows**,
   with automatic download and user-confirmed restart
 - Advanced network settings: DHT, PEX, uTP
 
-When adding a torrent, Meshy first fetches only its metadata. Choose the files and destination
+When adding a torrent, Meshy Torrent first fetches only its metadata. Choose the files and destination
 folder in the review step and confirm with **Start download**. For multiple entries, each torrent
 gets its own confirmation. The selection and folder are preserved when the app is reopened.
 
@@ -61,7 +61,7 @@ default app choice.
 
 Magnets and `.torrent` files opened from the OS go through the same review, including ones that
 arrive during startup or while another torrent is being reviewed. File associations are declared
-in the installer; run the installed app and choose Meshy in **Open with** or in default app
+in the installer; run the installed app and choose Meshy Torrent in **Open with** or in default app
 settings. Behavior in development varies by OS. See the
 [Electron integration documentation](https://www.electronjs.org/docs/latest/tutorial/launch-app-from-url-in-another-app).
 
@@ -112,7 +112,7 @@ seeders; the hints offer relevant actions without modifying the torrent automati
 
 ## 2. Architecture
 
-Meshy follows the Electron process model with strict isolation: the renderer never accesses
+Meshy Torrent follows the Electron process model with strict isolation: the renderer never accesses
 Node.js directly.
 
 ```mermaid

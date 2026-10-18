@@ -63,7 +63,7 @@ Ela contém relatórios `transfer-report.json` e `renderer-report.json`, logs,
 capturas PNG, o arquivo de teste e sessões próprias. As pastas são ignoradas pelo
 Git e preservadas para inspeção; o comando não limpa execuções anteriores.
 
-O perfil habitual do Meshy e seus downloads não são usados. A integração de magnets
+O perfil habitual do Meshy Torrent e seus downloads não são usados. A integração de magnets
 do sistema é bloqueada no auxiliar; nenhuma associação é registrada. A rede da
 transferência fica restrita a peers locais, sem descoberta pública.
 
@@ -97,7 +97,7 @@ O auxiliar também não cobre swarm público, recuperação de rede externa, dis
 permissões, concorrência e desempenho com vários torrents na execução desktop real. A engine
 atual encerra as conexões ao concluir (`main/torrentEngine.ts`, listener `done`);
 o seeder usado pelo auxiliar é outro cliente WebTorrent. Portanto, o resultado
-não comprova upload/seeding contínuo pelo Meshy após a conclusão.
+não comprova upload/seeding contínuo pelo Meshy Torrent após a conclusão.
 
 Os quatro alertas altos de dependências receberam uma
 [avaliação de aplicabilidade com prazo](SECURITY_REVIEW.md), sem remover os alertas
