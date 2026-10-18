@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useIntl } from 'react-intl';
 import {
     VscArrowDown,
@@ -10,7 +11,11 @@ import {
     VscGoToFile,
     VscInfo,
 } from 'react-icons/vsc';
-import type { DownloadItem as DownloadItemType, TorrentFileInfo } from '../../../shared/types';
+import type {
+    DownloadItem as DownloadItemType,
+    TorrentFileInfo,
+    IPCResponse,
+} from '../../../shared/types';
 import { ProgressBar } from '../common/ProgressBar';
 import { SpeedDisplay } from '../common/SpeedDisplay';
 import { formatBytes } from '../../utils/formatters';
@@ -72,7 +77,7 @@ interface DownloadItemProps {
     queueSize: number; // Tamanho total da fila (para desabilitar "mover para baixo")
     onPause: (infoHash: string) => Promise<unknown>;
     onResume: (infoHash: string) => Promise<unknown>;
-    onRemove: (infoHash: string, deleteFiles: boolean) => Promise<unknown>;
+    onRemove: (infoHash: string, deleteFiles: boolean) => Promise<IPCResponse<void>>;
     onMoveUp: (infoHash: string) => void;
     onMoveDown: (infoHash: string) => void;
     // Drag-and-drop (Task 8.1)
@@ -531,11 +536,11 @@ export const DownloadItem = React.memo(function DownloadItem({
                     aria-label={
                         detailsExpanded
                             ? intl.formatMessage({
-                                  id: 'downloads.actions.collapseDetailsAriaLabel',
-                              })
+                                id: 'downloads.actions.collapseDetailsAriaLabel',
+                            })
                             : intl.formatMessage({
-                                  id: 'downloads.actions.expandDetailsAriaLabel',
-                              })
+                                id: 'downloads.actions.expandDetailsAriaLabel',
+                            })
                     }
                     aria-expanded={detailsExpanded}
                     disabled={!isExpandable(item.status)}
@@ -708,23 +713,34 @@ export const DownloadItem = React.memo(function DownloadItem({
                 />
             </div>
 
-            <ConfirmDialog
-                isOpen={isConfirmDialogOpen}
-                title={intl.formatMessage({ id: 'downloads.confirmRemove.title' })}
-                message={intl.formatMessage(
-                    { id: 'downloads.confirmRemove.message' },
-                    { name: item.name },
-                )}
-                onConfirmKeepFiles={() => {
-                    setIsConfirmDialogOpen(false);
-                    onRemove(item.infoHash, false);
-                }}
-                onConfirmDeleteFiles={() => {
-                    setIsConfirmDialogOpen(false);
-                    onRemove(item.infoHash, true);
-                }}
-                onCancel={() => setIsConfirmDialogOpen(false)}
-            />
+            {createPortal(
+                <ConfirmDialog
+                    isOpen={isConfirmDialogOpen}
+                    title={intl.formatMessage({ id: 'downloads.confirmRemove.title' })}
+                    message={intl.formatMessage(
+                        { id: 'downloads.confirmRemove.message' },
+                        { name: item.name },
+                    )}
+                    onConfirmKeepFiles={() => {
+                        setIsConfirmDialogOpen(false);
+                        onRemove(item.infoHash, false).then((response) => {
+                            if (!response.success) {
+                                setActionError(resolveErrorMessage(intl, response.error));
+                            }
+                        });
+                    }}
+                    onConfirmDeleteFiles={() => {
+                        setIsConfirmDialogOpen(false);
+                        onRemove(item.infoHash, true).then((response) => {
+                            if (!response.success) {
+                                setActionError(resolveErrorMessage(intl, response.error));
+                            }
+                        });
+                    }}
+                    onCancel={() => setIsConfirmDialogOpen(false)}
+                />,
+                document.body,
+            )}
 
             {/* Context menu (Task 5.4) */}
             {contextMenu && (

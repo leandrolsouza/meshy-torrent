@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { IntlProvider } from 'react-intl';
 import '@testing-library/jest-dom';
 import { DownloadItem } from '../../src/components/DownloadList/DownloadItem';
@@ -67,5 +67,78 @@ describe('DownloadItem — renderização básica', () => {
     it('renderiza o status do torrent', () => {
         renderWithIntl(<DownloadItem item={createItem()} {...defaultProps} />);
         expect(screen.getByText('Baixando')).toBeInTheDocument();
+    });
+});
+
+// ─── Regressão: portal + tratamento de erro de remoção ────────────────────────
+
+describe('DownloadItem — remoção via ConfirmDialog', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    function openConfirmDialog(): void {
+        // Abre o ActionMenu (botão "⋯")
+        fireEvent.click(screen.getByRole('button', { name: 'Mais ações de Test Torrent' }));
+        // Clica no botão de remover dentro do menu
+        fireEvent.click(screen.getByRole('button', { name: 'Remover Test Torrent' }));
+    }
+
+    it('renderiza ConfirmDialog em document.body (portal)', () => {
+        renderWithIntl(<DownloadItem item={createItem()} {...defaultProps} />);
+
+        openConfirmDialog();
+
+        const dialog = screen.getByRole('dialog');
+
+        // O dialog deve estar em document.body, não dentro do card
+        expect(document.body.contains(dialog)).toBe(true);
+        const card = screen.getByRole('listitem');
+        expect(card.contains(dialog)).toBe(false);
+    });
+
+    it('exibe alerta de erro quando onRemove retorna failure', async () => {
+        const onRemove = jest
+            .fn()
+            .mockResolvedValue({ success: false, error: 'error.engine.restarting' });
+
+        renderWithIntl(<DownloadItem item={createItem()} {...defaultProps} onRemove={onRemove} />);
+
+        openConfirmDialog();
+
+        // Confirma mantendo arquivos
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Manter arquivos' }));
+        });
+
+        // Deve aparecer um role=alert com a mensagem traduzida
+        await waitFor(() => {
+            expect(screen.getByRole('alert')).toHaveTextContent(
+                'Motor de torrents está reiniciando. Tente novamente em alguns segundos.',
+            );
+        });
+    });
+
+    it('não exibe erro quando onRemove retorna success', async () => {
+        const onRemove = jest.fn().mockResolvedValue({ success: true });
+
+        renderWithIntl(<DownloadItem item={createItem()} {...defaultProps} onRemove={onRemove} />);
+
+        openConfirmDialog();
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Manter arquivos' }));
+        });
+
+        // Nenhum role=alert de erro deve aparecer
+        await waitFor(() => {
+            const alerts = screen.queryAllByRole('alert');
+            // pode haver role=alert de diskSpace — mas não deve conter mensagem de erro de engine
+            alerts.forEach((alert) => {
+                expect(alert).not.toHaveTextContent(
+                    'Motor de torrents está reiniciando',
+                );
+            });
+        });
     });
 });

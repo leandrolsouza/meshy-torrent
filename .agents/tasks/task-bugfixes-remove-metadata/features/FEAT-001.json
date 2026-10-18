@@ -1,0 +1,29 @@
+{
+  "id": "FEAT-001",
+  "type": "fix",
+  "description": "Fix Bug 1: ConfirmDialog in DownloadItem is blocked by the parent div's inert attribute (set when isBusy=true for >=400ms via MIN_OVERLAY_MS). Also, onRemove's Promise<IPCResponse<void>> is discarded so IPC failures are silent. Fix: portal ConfirmDialog to document.body via createPortal; await onRemove result and call setActionError on failure.",
+  "status": "completed",
+  "steps": [
+    "In src/components/DownloadList/DownloadItem.tsx: add 'import { createPortal } from \"react-dom\"' at the top. Add 'IPCResponse' to the existing import from '../../../shared/types'.",
+    "In DownloadItemProps interface (DownloadItem.tsx): change onRemove type from '(infoHash: string, deleteFiles: boolean) => Promise<unknown>' to '(infoHash: string, deleteFiles: boolean) => Promise<IPCResponse<void>>'. No changes needed to DownloadList.tsx — handleRemove already returns Promise<IPCResponse<void>> via withBusy<IPCResponse<void>>.",
+    "In DownloadItem.tsx, update onConfirmKeepFiles callback inside the ConfirmDialog props: after 'setIsConfirmDialogOpen(false)', chain '.then((response) => { if (!response.success) { setActionError(resolveErrorMessage(intl, response.error)); } })' on onRemove(item.infoHash, false). Do the same for onConfirmDeleteFiles with deleteFiles=true.",
+    "In DownloadItem.tsx, wrap the entire <ConfirmDialog .../> JSX element with createPortal(..., document.body) so it renders outside the inert div. Keep all existing ConfirmDialog props unchanged.",
+    "In tests/unit/DownloadItem.test.tsx: add two regression tests. (1) When onRemove resolves with { success: false, error: 'error.engine.restarting' }, after clicking confirm, a role='alert' element appears with the translated error message. (2) The ConfirmDialog renders in document.body (not inside the card element). Use userEvent or fireEvent to open ActionMenu and click the remove button to open the dialog, then click 'Manter arquivos'. Wrap in IntlProvider with pt-BR messages. Mock window.meshy as needed (not required for these tests since onRemove is a prop)."
+  ],
+  "acceptance_criteria": [
+    "createPortal wraps ConfirmDialog so document.body contains the dialog element when isOpen=true, not the card div",
+    "When onRemove returns { success: false, error: 'error.engine.restarting' }, a role=alert element appears in the DOM with text matching the pt-BR translation for that error code",
+    "When onRemove returns { success: true }, no error alert appears",
+    "npm test -- --runInBand --runTestsByPath tests/unit/DownloadItem.test.tsx passes all tests",
+    "npx --no-install tsc --noEmit -p tsconfig.web.json reports no errors",
+    "npm run lint reports no new errors"
+  ],
+  "verification": [
+    "npm test -- --runInBand --runTestsByPath tests/unit/DownloadItem.test.tsx",
+    "npx --no-install tsc --noEmit -p tsconfig.web.json",
+    "npx --no-install tsc --noEmit -p tsconfig.jest.json",
+    "npm run lint"
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented as specified. createPortal wraps ConfirmDialog so the dialog renders in document.body, bypassing the inert div. onRemove callbacks now chain .then() to check response.success and call setActionError on failure. Three regression tests added (portal location, failure alert, success no-alert). All 5 tests pass, tsconfig.web.json and tsconfig.jest.json typecheck clean, lint exits 0 (no new errors in changed files)."
+}
