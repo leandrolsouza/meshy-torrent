@@ -59,6 +59,7 @@ function makeMockDownloadManager(): DownloadManager {
         setMaxConcurrentDownloads: jest.fn(),
         reorderQueue: jest.fn().mockReturnValue([]),
         getQueueOrder: jest.fn().mockReturnValue([]),
+        getCachedMetadata: jest.fn().mockReturnValue(undefined),
         on: jest.fn(),
     } as unknown as DownloadManager;
 }
@@ -617,7 +618,7 @@ describe('registerIpcHandlers — tracker handlers', () => {
                 'udp://fail.example.com:6969',
             ]);
             (mockTorrentEngine.addTracker as jest.Mock)
-                .mockImplementationOnce(() => {}) // primeiro sucesso
+                .mockImplementationOnce(() => { }) // primeiro sucesso
                 .mockImplementationOnce(() => {
                     throw new Error('Tracker já presente');
                 }); // segundo falha
@@ -977,8 +978,8 @@ describe('Property 19: Evento de progresso IPC contém todos os itens ativos', (
             hashes.length === 0
                 ? fc.constant<DownloadItem[]>([])
                 : fc
-                      .tuple(...hashes.map((h) => downloadItemArb(h)))
-                      .map((items) => items as DownloadItem[]),
+                    .tuple(...hashes.map((h) => downloadItemArb(h)))
+                    .map((items) => items as DownloadItem[]),
         );
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -2478,7 +2479,7 @@ describe('registerIpcHandlers — withTimeout expiração de operação (Task 4.
         jest.clearAllMocks();
         const dm = makeMockDownloadManager();
         // pause nunca resolve — simula operação travada
-        (dm.pause as jest.Mock).mockReturnValue(new Promise<void>(() => {}));
+        (dm.pause as jest.Mock).mockReturnValue(new Promise<void>(() => { }));
 
         const sm = makeMockSettingsManager();
         const te = makeMockTorrentEngine();

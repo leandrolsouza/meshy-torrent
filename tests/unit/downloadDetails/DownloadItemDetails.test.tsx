@@ -82,7 +82,7 @@ function createItem(overrides: Partial<DownloadItemType> = {}): DownloadItemType
 const defaultProps = {
     onPause: jest.fn().mockResolvedValue(undefined),
     onResume: jest.fn().mockResolvedValue(undefined),
-    onRemove: jest.fn().mockResolvedValue(undefined),
+    onRemove: jest.fn().mockResolvedValue({ success: true }),
     queueSize: 0,
     onMoveUp: jest.fn(),
     onMoveDown: jest.fn(),
@@ -135,7 +135,7 @@ describe('DownloadItem + DetailsPanel — integração', () => {
     });
 
     it('remoção no menu exige confirmação e mantém a escolha explícita sobre arquivos', () => {
-        const onRemove = jest.fn().mockResolvedValue(undefined);
+        const onRemove = jest.fn().mockResolvedValue({ success: true });
         renderWithIntl(<DownloadItem item={createItem()} {...defaultProps} onRemove={onRemove} />);
         expect(
             screen.queryByRole('button', { name: /remover test torrent/i }),
