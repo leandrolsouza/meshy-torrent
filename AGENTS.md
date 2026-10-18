@@ -63,6 +63,10 @@ pacotes sem editor configurado mantêm o atualizador desabilitado. Veja `docs/AU
 em perfil isolado; `npm run qa:transfer` executa somente a transferência. Auxiliares
 ficam em `scripts/qa/` e evidências em `.build-resources/qa/`, fora das suítes Jest.
 Esses cenários não instalam o app nem substituem a homologação em máquina limpa.
+`npm run security:audit` preserva o relatório bruto de produção e aplica a avaliação
+restrita de `security/audit-policy.json`, documentada em `docs/SECURITY_REVIEW.md`.
+Mudanças nas dependências avaliadas exigem rever a evidência, sem ampliar a exceção
+automaticamente para contornar uma falha.
 
 O script `npm run typecheck` verifica explicitamente os projetos node, web e testes
 com o compilador nativo TypeScript 7. O pacote `typescript` é um alias da API

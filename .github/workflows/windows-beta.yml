@@ -35,7 +35,7 @@ jobs:
             - run: npm run typecheck
             - run: npm run lint
             - name: Conferir formatação da infraestrutura de release
-              run: npx --no-install prettier --check .github/workflows/windows-beta.yml package.json electron-builder.json scripts/*.cjs scripts/*.mjs scripts/qa/* tests/integration/release-checksums.test.ts docs/RELEASE.md docs/QA_RELEASE.md docs/AUTO_UPDATES.md docs/releases/*.md
+              run: npx --no-install prettier --check .github/workflows/windows-beta.yml package.json electron-builder.json scripts/*.cjs scripts/*.mjs scripts/qa/* security/*.json tests/integration/release-checksums.test.ts tests/integration/audit-production.test.ts docs/RELEASE.md docs/QA_RELEASE.md docs/SECURITY_REVIEW.md docs/AUTO_UPDATES.md docs/releases/*.md
             - run: npm test -- --runInBand
             - name: Compilar e homologar transferência e interface
               run: npm run qa:release
@@ -89,4 +89,13 @@ jobs:
                   node-version: '22.17.0'
                   cache: npm
             - run: npm ci --ignore-scripts
-            - run: npm audit --omit=dev --audit-level=high
+            - run: npm run security:audit
+            - name: Guardar relatório bruto de auditoria
+              if: always()
+              uses: actions/upload-artifact@v6
+              with:
+                  name: meshy-audit-${{ github.sha }}
+                  path: .build-resources/security/audit-production.json
+                  include-hidden-files: true
+                  if-no-files-found: ignore
+                  retention-days: 14

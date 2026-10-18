@@ -1,5 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'fs/promises';
-const fileSystem = jest.requireActual<typeof import('fs/promises')>('fs/promises');
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createTorrentFilesService, resolveTorrentFile } from '../../main/torrentFiles';
@@ -69,21 +68,21 @@ test.each([
     await expect(resolveTorrentFile(destination, path)).rejects.toThrow('unsafePath');
 });
 test('rejeita symlink/junction no destino antes de copiar ou excluir arquivos', async () => {
-    const originalStat = fileSystem.lstat;
-    const mock = jest.spyOn(fileSystem, 'lstat').mockImplementation((async (
-        path: Parameters<typeof fileSystem.lstat>[0],
-    ) => {
-        if (String(path) === join(destination, 'Archive')) return { isSymbolicLink: () => true };
-        return originalStat(path);
-    }) as typeof fileSystem.lstat);
-    try {
-        await expect(resolveTorrentFile(destination, 'Archive/a.bin')).rejects.toThrow(
-            'unsafePath',
-        );
-        await expect(createTorrentFilesService().copy(source, destination, files)).rejects.toThrow(
-            'unsafePath',
-        );
-    } finally {
-        mock.mockRestore();
-    }
+    // Junction no Windows dispensa privilégios para criar symlinks. Tanto o alvo
+    // quanto o link pertencem exclusivamente ao diretório temporário deste teste.
+    const redirected = join(root, 'redirected');
+    await mkdir(redirected);
+    await writeFile(join(redirected, 'a.bin'), 'keep');
+    await symlink(
+        redirected,
+        join(destination, 'Archive'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+    );
+
+    await expect(resolveTorrentFile(destination, 'Archive/a.bin')).rejects.toThrow('unsafePath');
+    await expect(createTorrentFilesService().copy(source, destination, files)).rejects.toThrow(
+        'unsafePath',
+    );
+    expect(await readFile(join(source, 'Archive/a.bin'), 'utf8')).toBe('hello');
+    expect(await readFile(join(redirected, 'a.bin'), 'utf8')).toBe('keep');
 });
