@@ -25,5 +25,5 @@
     "npm run lint"
   ],
   "blocked_reason": null,
-  "findings": "Implemented as specified. createPortal wraps ConfirmDialog so the dialog renders in document.body, bypassing the inert div. onRemove callbacks now chain .then() to check response.success and call setActionError on failure. Three regression tests added (portal location, failure alert, success no-alert). All 5 tests pass, tsconfig.web.json and tsconfig.jest.json typecheck clean, lint exits 0 (no new errors in changed files)."
+  "findings": "Implemented as specified. createPortal wraps ConfirmDialog so the dialog renders in document.body, bypassing the inert div. onRemove callbacks now chain .then() to check response.success and call setActionError on failure. Three regression tests added (portal location, failure alert, success no-alert). Integration verification (all 1577 tests, 98 suites): PASS. tsconfig.node.json, tsconfig.web.json, tsconfig.jest.json typecheck: clean. npm run lint: 0 errors. Integration fix applied: DownloadItemDetails.test.tsx onRemove mocks updated from mockResolvedValue(undefined) to mockResolvedValue({ success: true }) to match the updated onRemove return type, preventing unhandled Promise rejections."
 }
