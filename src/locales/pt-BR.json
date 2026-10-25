@@ -365,5 +365,9 @@
     "settings.seeding.enabledDescription": "Torrents completos continuam na rede enviando dados para outros peers",
     "settings.seeding.maxConcurrent": "Seeders simultâneos",
     "settings.seeding.maxConcurrentDescription": "Número máximo de torrents seedando ao mesmo tempo (1–20)",
-    "error.settings.invalid": "Configurações de seeding inválidas"
+    "error.settings.invalid": "Configurações de seeding inválidas",
+    "storage.errorTitle": "Não foi possível abrir os dados do Meshy Torrent",
+    "storage.unavailable": "O cofre seguro do sistema está indisponível. Desbloqueie ou configure o cofre do seu usuário e abra o aplicativo novamente. Os arquivos existentes foram preservados; nenhum dado foi salvo em texto claro.",
+    "storage.unreadable": "Não foi possível acessar os dados protegidos com a credencial atual do sistema. Os arquivos existentes foram preservados. Use a conta e o cofre originais ou restaure um backup compatível.",
+    "storage.writeFailed": "Não foi possível proteger os dados para gravação. Os arquivos existentes foram preservados. Verifique o cofre do sistema e tente abrir o aplicativo novamente."
 }

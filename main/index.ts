@@ -26,7 +26,8 @@ import { getUpdateDisabledReason } from './updatePolicy';
 import ptBR from '../src/locales/pt-BR.json';
 import enUS from '../src/locales/en-US.json';
 
-import ElectronStore from 'electron-store';
+import { createProtectedStore } from './protectedStore';
+import { ProtectedStoreError } from './storeEncryption';
 
 // ─── Caminho de dados do usuário ──────────────────────────────────────────────
 // Preserva o diretório legado "Meshy" independente do productName atual,
@@ -41,7 +42,7 @@ import ElectronStore from 'electron-store';
 // Module-level references so the before-quit handler can access them
 let downloadManager: DownloadManager | null = null;
 let desktopReady = false;
-let showMainWindow = () => { };
+let showMainWindow = () => {};
 let background: ReturnType<typeof createBackgroundController> | undefined;
 const externalTorrents = createExternalTorrentInbox(() => {
     if (!desktopReady) return;
@@ -155,27 +156,27 @@ function createMainWindow(): BrowserWindow {
     window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
         const cspDirectives = isDev
             ? [
-                "default-src 'self'",
-                "script-src 'self' 'unsafe-inline'",
-                "style-src 'self' 'unsafe-inline'",
-                "img-src 'self' data:",
-                "font-src 'self'",
-                "connect-src 'self' ws://localhost:*",
-                "frame-src 'none'",
-                "object-src 'none'",
-                "base-uri 'none'",
-            ]
+                  "default-src 'self'",
+                  "script-src 'self' 'unsafe-inline'",
+                  "style-src 'self' 'unsafe-inline'",
+                  "img-src 'self' data:",
+                  "font-src 'self'",
+                  "connect-src 'self' ws://localhost:*",
+                  "frame-src 'none'",
+                  "object-src 'none'",
+                  "base-uri 'none'",
+              ]
             : [
-                "default-src 'self'",
-                "script-src 'self'",
-                "style-src 'self' 'unsafe-inline'",
-                "img-src 'self' data:",
-                "font-src 'self'",
-                "connect-src 'self'",
-                "frame-src 'none'",
-                "object-src 'none'",
-                "base-uri 'none'",
-            ];
+                  "default-src 'self'",
+                  "script-src 'self'",
+                  "style-src 'self' 'unsafe-inline'",
+                  "img-src 'self' data:",
+                  "font-src 'self'",
+                  "connect-src 'self'",
+                  "frame-src 'none'",
+                  "object-src 'none'",
+                  "base-uri 'none'",
+              ];
 
         callback({
             responseHeaders: {
@@ -266,7 +267,7 @@ app.whenReady()
         });
 
         // Shared electron-store instance for download session persistence
-        const downloadsStore = new ElectronStore({ name: 'downloads' });
+        const downloadsStore = createProtectedStore({ name: 'downloads' });
         const persistedStore = {
             get: (key: string) => downloadsStore.get(key),
             set: (key: string, value: unknown) => downloadsStore.set(key, value),
@@ -438,6 +439,19 @@ app.whenReady()
         const message = err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack : undefined;
         logger.error('[Main] Falha crítica na inicialização do app:', message, stack);
+        if (err instanceof ProtectedStoreError) {
+            const messages = app.getLocale().toLowerCase().startsWith('pt') ? ptBR : enUS;
+            dialog.showErrorBox(
+                messages['storage.errorTitle'],
+                messages[
+                    err.reason === 'unavailable'
+                        ? 'storage.unavailable'
+                        : err.reason === 'write'
+                          ? 'storage.writeFailed'
+                          : 'storage.unreadable'
+                ],
+            );
+        }
         app.exit(1);
     });
 

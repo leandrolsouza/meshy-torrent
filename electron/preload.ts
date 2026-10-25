@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { MAX_TORRENT_BYTES } from '../shared/validators';
+import { MAX_TORRENT_BYTES } from '../shared/torrentLimits';
 import { ErrorCodes } from '../shared/errorCodes';
 import type {
     DownloadItem,

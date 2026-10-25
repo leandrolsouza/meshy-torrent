@@ -1,4 +1,4 @@
-import ElectronStoreDefault from 'electron-store';
+import { createProtectedStore } from './protectedStore';
 import type { AppSettings } from '../shared/types';
 import { createDefaultBandwidthSettings, isValidBandwidthSettings } from '../shared/bandwidth';
 import {
@@ -329,7 +329,7 @@ function sanitizeOnLoad(store: SettingsStore, getDownloadsPath: () => string, lo
  * This is only called in the Electron main process.
  */
 function createElectronStore(): SettingsStore {
-    const store = new ElectronStoreDefault<PersistedSettings>({
+    const store = createProtectedStore<PersistedSettings>({
         name: 'settings',
         defaults: {
             bandwidth: createDefaultBandwidthSettings(),

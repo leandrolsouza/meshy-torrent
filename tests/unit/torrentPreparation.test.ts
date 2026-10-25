@@ -57,6 +57,54 @@ test('obtém metadados com zero seleção, armazenamento sem disco e encerra a r
     service.dispose();
 });
 
+test.each(['magnet', 'buffer'] as const)(
+    'preparação filtra destinos do %s antes da rede iniciar',
+    async (kind) => {
+        const { service, torrent, client } = setup(false);
+        const request = jest.fn();
+        const network = Object.assign(torrent, {
+            announce: [] as string[],
+            xs: ['http://127.0.0.1/metadata', 'https://metadata.example.com/file.torrent'],
+            _startDiscovery() {
+                this.announce.forEach((url) => request(url));
+            },
+            _getMetadataFromServer() {
+                this.xs.forEach((url) => request(url));
+            },
+            addWebSeed(url: string) {
+                request(url);
+            },
+        });
+        client.add.mockImplementation(() => {
+            // Como no WebTorrent, o parse inicia a rede depois de client.add retornar.
+            Promise.resolve().then(() => {
+                Object.assign(network, {
+                    announce: ['http://127.0.0.1/announce', 'https://tracker.example.com/announce'],
+                });
+                network._getMetadataFromServer();
+                network._startDiscovery();
+                network.addWebSeed('http://127.0.0.1/file');
+                torrent.emit('metadata');
+            });
+            return torrent;
+        });
+        try {
+            await service.prepare(
+                'request-123',
+                kind === 'magnet'
+                    ? { kind, magnetUri: `${torrent.magnetURI}&xs=http://127.0.0.1/metadata` }
+                    : { kind, buffer: Buffer.from('de') },
+            );
+            expect(request.mock.calls).toEqual([
+                ['https://metadata.example.com/file.torrent'],
+                ['https://tracker.example.com/announce'],
+            ]);
+        } finally {
+            service.dispose();
+        }
+    },
+);
+
 describe('encerramento limitado da preparação', () => {
     beforeEach(() => jest.useFakeTimers());
     afterEach(() => jest.useRealTimers());

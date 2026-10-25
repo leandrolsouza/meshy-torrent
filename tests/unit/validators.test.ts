@@ -1366,7 +1366,7 @@ describe('isValidTrackerUrl — rejeição de IPs privados e reservados', () => 
         expect(isValidTrackerUrl('udp://1.1.1.1:6969')).toBe(true);
     });
 
-    it('aceita IP público 203.0.113.1 via https', () => {
-        expect(isValidTrackerUrl('https://203.0.113.1:6969')).toBe(true);
+    it('rejeita o endereço reservado para documentação 203.0.113.1 via https', () => {
+        expect(isValidTrackerUrl('https://203.0.113.1:6969')).toBe(false);
     });
 });

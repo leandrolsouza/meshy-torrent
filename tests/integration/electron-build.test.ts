@@ -7,6 +7,7 @@ interface BuiltEntry {
     fileName: string;
     imports: string[];
     code: string;
+    moduleIds: string[];
 }
 
 describe('build Electron', () => {
@@ -28,7 +29,13 @@ describe('build Electron', () => {
                             logLevel: 'silent',
                             build: { ...config[target].build, write: false },
                         });
-                        entries[target] = result.output.find(chunk => chunk.isEntry);
+                        const entry = result.output.find(chunk => chunk.isEntry);
+                        entries[target] = {
+                            fileName: entry.fileName,
+                            imports: entry.imports,
+                            code: entry.code,
+                            moduleIds: entry.moduleIds,
+                        };
                     }
                     process.stdout.write(JSON.stringify(entries));
                 `,
@@ -38,7 +45,24 @@ describe('build Electron', () => {
         const entries = JSON.parse(output) as { main: BuiltEntry; preload: BuiltEntry };
 
         expect(entries.main.fileName).toBe('index.mjs');
-        expect(entries.main.imports).toEqual(expect.arrayContaining(['electron', 'webtorrent']));
+        expect(entries.main.imports).toEqual(expect.arrayContaining(['electron', 'node-fetch']));
+        for (const name of [
+            'webtorrent',
+            'torrent-discovery',
+            'bittorrent-tracker',
+            'cross-fetch-ponyfill',
+        ])
+            expect(entries.main.imports).not.toContain(name);
+        const modules = entries.main.moduleIds.map((id) => id.replace(/\\/g, '/'));
+        for (const suffix of [
+            '/webtorrent/lib/torrent.js',
+            '/webtorrent/lib/webconn.js',
+            '/bittorrent-tracker/lib/client/http-tracker.js',
+            '/bittorrent-tracker/lib/client/udp-tracker.js',
+            '/main/torrentHttpTransport.ts',
+            '/main/torrentUdpTransport.ts',
+        ])
+            expect(modules.some((id) => id.endsWith(suffix))).toBe(true);
         expect(entries.preload.fileName).toBe('index.js');
 
         const exposeInMainWorld = jest.fn();

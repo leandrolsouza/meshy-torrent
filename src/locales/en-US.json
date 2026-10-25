@@ -365,5 +365,9 @@
     "settings.seeding.enabledDescription": "Completed torrents stay in the network uploading data to other peers",
     "settings.seeding.maxConcurrent": "Concurrent seeders",
     "settings.seeding.maxConcurrentDescription": "Maximum number of torrents seeding at the same time (1–20)",
-    "error.settings.invalid": "Invalid seeding settings"
+    "error.settings.invalid": "Invalid seeding settings",
+    "storage.errorTitle": "Unable to open Meshy Torrent data",
+    "storage.unavailable": "The system's secure storage is unavailable. Unlock or configure your user's key store, then open the application again. Existing files were preserved; no data was saved in plaintext.",
+    "storage.unreadable": "Unable to access protected data with the current system credentials. Existing files were preserved. Use the original account and key store, or restore a compatible backup.",
+    "storage.writeFailed": "Unable to protect data for writing. Existing files were preserved. Check the system's key store and try opening the application again."
 }

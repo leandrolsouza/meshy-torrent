@@ -2,9 +2,10 @@
 //
 // Single source of truth for validation logic used across both processes.
 // Avoids duplication of regex patterns and validation functions.
+import ipaddr from 'ipaddr.js';
 
 // ─── Magnet URI ───────────────────────────────────────────────────────────────
-export const MAX_TORRENT_BYTES = 8 * 1024 * 1024;
+export { MAX_TORRENT_BYTES } from './torrentLimits';
 
 // O hash continua exigindo 40 caracteres hexadecimais. A query também admite
 // caracteres reservados de URI usados em trackers, nomes e seleção de arquivos.
@@ -88,7 +89,6 @@ export function isValidTrackerUrl(url: string): boolean {
     if (trimmed.length === 0) return false;
 
     try {
-        // URL não suporta udp://, então tratamos manualmente
         const protocolMatch = trimmed.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//);
         if (!protocolMatch) return false;
 
@@ -97,68 +97,36 @@ export function isValidTrackerUrl(url: string): boolean {
         const protocol = capturedProtocol.toLowerCase() + ':';
         if (!VALID_TRACKER_PROTOCOLS.includes(protocol)) return false;
 
-        let hostname: string;
-
-        // Para http/https, usamos o construtor URL nativo
-        if (protocol === 'http:' || protocol === 'https:') {
-            const parsed = new URL(trimmed);
-            if (parsed.hostname.length === 0) return false;
-            hostname = parsed.hostname;
-        } else {
-            // Para udp://, extraímos o hostname manualmente
-            const afterProtocol = trimmed.slice(protocolMatch[0].length);
-            // Hostname é tudo antes de : ou / ou fim da string
-            const hostnameMatch = afterProtocol.match(/^([^:/]+)/);
-            const hostnameCapture = hostnameMatch?.[1];
-            if (!hostnameCapture) return false;
-            hostname = hostnameCapture;
-        }
-
-        // Rejeitar IPs privados, loopback e reservados (SSRF protection)
-        if (isPrivateHost(hostname)) return false;
-
-        return true;
+        // O mesmo parser do tracker UDP: HTTP canonicaliza IPv4 abreviado/hexadecimal.
+        const parsed = new URL(trimmed.replace(/^udp:/i, 'http:'));
+        if (parsed.username || parsed.password || !parsed.hostname) return false;
+        const hostname = parsed.hostname.replace(/^\[|\]$/g, '').replace(/\.+$/, '');
+        if (!hostname) return false;
+        if (ipaddr.isValid(hostname)) return isPublicIpAddress(hostname);
+        return (
+            !/^(localhost|localhost\.localdomain)$/i.test(hostname) &&
+            !/\.(localhost|local)$/i.test(hostname)
+        );
     } catch {
         return false;
     }
 }
 
 /**
- * Verifica se um hostname é um IP privado, loopback ou reservado.
- * Bloqueia: 127.x.x.x, 10.x.x.x, 172.16-31.x.x, 192.168.x.x,
- * 169.254.x.x (link-local), 0.0.0.0, localhost, e IPv6 loopback (::1).
+ * Aceita somente IPs unicast públicos, incluindo IPv4 mapeado em IPv6.
+ * Não resolve DNS; o transporte também deve validar a resolução usada pelo socket.
  */
-function isPrivateHost(hostname: string): boolean {
-    const lower = hostname.toLowerCase();
-
-    // localhost e variantes
-    if (lower === 'localhost' || lower === 'localhost.localdomain') return true;
-
-    // IPv6 loopback
-    if (lower === '::1' || lower === '[::1]') return true;
-
-    // Verificar se é um endereço IPv4
-    const ipv4Match = lower.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (ipv4Match) {
-        const [, rawA, rawB] = ipv4Match;
-        if (rawA === undefined || rawB === undefined) return false;
-        const a = Number(rawA);
-        const b = Number(rawB);
-        // 0.0.0.0/8
-        if (a === 0) return true;
-        // 10.0.0.0/8
-        if (a === 10) return true;
-        // 127.0.0.0/8 (loopback)
-        if (a === 127) return true;
-        // 169.254.0.0/16 (link-local)
-        if (a === 169 && b === 254) return true;
-        // 172.16.0.0/12
-        if (a === 172 && b >= 16 && b <= 31) return true;
-        // 192.168.0.0/16
-        if (a === 192 && b === 168) return true;
+export function isPublicIpAddress(value: string): boolean {
+    try {
+        if (value.includes('%')) return false;
+        const address = ipaddr.process(value);
+        return (
+            address.range() === 'unicast' &&
+            (address.kind() === 'ipv4' || address.match(ipaddr.parse('2000::'), 3))
+        );
+    } catch {
+        return false;
     }
-
-    return false;
 }
 
 /**

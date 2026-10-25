@@ -26,6 +26,10 @@ WebTorrent, engine ou download manager. A transferência usa um adaptador simple
 de persistência JSON em disco; a interface usa ElectronStore real e o preload e
 renderer compilados do projeto.
 
+Os stores de settings e downloads da interface usam a mesma factory protegida da
+produção, com `safeStorage` real do sistema operacional. O perfil de QA contém
+somente fixtures e passkeys sintéticas.
+
 ## Transferência local
 
 1. Gera um arquivo próprio aleatório de 4 MiB e um torrent privado.
@@ -48,6 +52,11 @@ O auxiliar abre uma janela Electron oculta de 1200 × 800, com perfil descartáv
 preload e renderer de produção, serviços reais e handlers IPC do aplicativo.
 Mantém sandbox, context isolation e Node desabilitado no renderer. Usa o estado
 de atualização sem assinatura e a versão de `package.json` fornecidos pelo auxiliar.
+
+Antes de abrir a janela, verifica a migração de um JSON legado de settings, o
+round-trip de trackers e de um magnet na sessão e a ausência da passkey sintética
+nos arquivos cifrados. O relatório registra esses resultados em `protectedStorage`.
+O cofre do sistema precisa estar disponível; não há fallback `basic_text` no Linux.
 
 Confere carregamento, leitura de configurações, lista vazia, atualização manual,
 tema aplicado, ausência de Node exposto e ausência de rolagem horizontal da página.

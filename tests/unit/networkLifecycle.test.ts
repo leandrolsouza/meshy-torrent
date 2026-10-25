@@ -293,6 +293,24 @@ test('tracker budget applies to embedded URLs before discovery and to manual add
     );
 });
 
+test.each(['magnet', 'buffer'] as const)(
+    'engine filtra trackers do %s antes da primeira descoberta',
+    async (kind) => {
+        const { client, engine } = setup();
+        const work =
+            kind === 'magnet'
+                ? engine.addMagnetLink(`${magnet(hashOf(1))}&tr=http://127.0.0.1/announce`)
+                : engine.addTorrentBuffer(Buffer.from('d4:test4:datae'));
+        const torrent = client.torrents[0];
+        torrent.announce = ['http://127.0.0.1/announce', 'https://tracker.example.com/announce'];
+        jest.runAllTicks();
+        await work;
+        expect(torrent.discovery!.tracker._trackers.map((tracker) => tracker.announceUrl)).toEqual([
+            'https://tracker.example.com/announce',
+        ]);
+    },
+);
+
 test('conclusão mantém a rede para seed e libera o slot de download', async () => {
     const { client, manager } = setup();
     await manager.addMagnetLink(magnet(hashOf(1)));

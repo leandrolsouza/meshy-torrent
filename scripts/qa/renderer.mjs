@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow } from 'electron';
-import ElectronStore from 'electron-store';
+import { createProtectedStore } from '../../main/protectedStore';
 import WebTorrent from 'webtorrent';
 import updater from 'electron-updater';
 import { createSettingsManager } from '../../main/settingsManager';
@@ -29,7 +29,15 @@ const client = new WebTorrent({
     natUpnp: false,
     natPmp: false,
 });
-const store = new ElectronStore({ cwd: profile, name: 'settings' });
+const storageProbe = 'SYNTHETIC_QA_PRIVATE_PASSKEY';
+const privateTracker = `https://tracker.example.test/${storageProbe}/announce`;
+// Perfil isolado: comprova a migração e o round-trip usando o cofre real do OS.
+writeFileSync(join(profile, 'settings.json'), JSON.stringify({ globalTrackers: [privateTracker] }));
+const store = createProtectedStore({ cwd: profile, name: 'settings' });
+assert(!readFileSync(join(profile, 'settings.json'), 'utf8').includes(storageProbe));
+assert.deepEqual(createProtectedStore({ cwd: profile, name: 'settings' }).get('globalTrackers'), [
+    privateTracker,
+]);
 store.set({
     destinationFolder: app.getPath('downloads'),
     schemaVersion: 1,
@@ -58,7 +66,17 @@ const engine = createTorrentEngine(
     },
     client,
 );
-const session = new ElectronStore({ cwd: profile, name: 'downloads' });
+const session = createProtectedStore({ cwd: profile, name: 'downloads' });
+session.set(
+    'qaProbe',
+    `magnet:?xt=urn:btih:${'a'.repeat(40)}&tr=${encodeURIComponent(privateTracker)}`,
+);
+assert(!readFileSync(join(profile, 'downloads.json'), 'utf8').includes(storageProbe));
+assert.equal(
+    createProtectedStore({ cwd: profile, name: 'downloads' }).get('qaProbe'),
+    session.get('qaProbe'),
+);
+session.delete('qaProbe');
 const manager = createDownloadManager(engine, settings, session, undefined, {
     disableCleanupTimer: true,
 });
@@ -174,6 +192,12 @@ try {
     assert.deepEqual(errors, []);
     const report = {
         ok: true,
+        protectedStorage: {
+            legacyMigration: true,
+            settingsRoundTrip: true,
+            downloadsRoundTrip: true,
+            plaintextProbeAbsent: true,
+        },
         captures,
         scope: 'Renderer e preload de produção com serviços e IPC reais em janela oculta e perfil isolado; não executa main/index nem instalador',
     };

@@ -1,4 +1,5 @@
 import log from 'electron-log';
+import { redactLogValue, redactSensitiveText } from './logRedaction';
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 //
@@ -69,17 +70,20 @@ function formatContext(ctx: LogContext): string {
  */
 export const logger: Logger = {
     info(message: string, ...args: unknown[]): void {
-        log.info(message, ...args);
+        log.info(redactSensitiveText(message), ...args.map((arg) => redactLogValue(arg)));
     },
     warn(message: string, ...args: unknown[]): void {
-        log.warn(message, ...args);
+        log.warn(redactSensitiveText(message), ...args.map((arg) => redactLogValue(arg)));
     },
     error(message: string, ...args: unknown[]): void {
-        log.error(message, ...args);
+        log.error(redactSensitiveText(message), ...args.map((arg) => redactLogValue(arg)));
     },
     debug(message: string, ...args: unknown[]): void {
         if (debugEnabled) {
-            log.info(`[DEBUG] ${message}`, ...args);
+            log.info(
+                redactSensitiveText(`[DEBUG] ${message}`),
+                ...args.map((arg) => redactLogValue(arg)),
+            );
         }
     },
 };

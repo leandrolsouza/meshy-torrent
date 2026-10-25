@@ -10,6 +10,7 @@
 
 import type { Torrent } from 'webtorrent';
 import type { TrackerStatus } from '../shared/types';
+import { isValidTrackerUrl } from '../shared/validators';
 
 // ─── Tipos internos ──────────────────────────────────────────────────────────
 
@@ -94,11 +95,11 @@ function watchTrackerStatus(torrent: Torrent): void {
     const discovery = asRecord(torrent).discovery as Discovery | undefined;
     const client = discovery?.tracker as
         | (NonNullable<Discovery['tracker']> & {
-            on?: (
-                event: string,
-                listener: (value: { announce?: string } | Error) => void,
-            ) => void;
-        })
+              on?: (
+                  event: string,
+                  listener: (value: { announce?: string } | Error) => void,
+              ) => void;
+          })
         | undefined;
     if (!client?.on || watchedTrackers.has(client)) return;
     watchedTrackers.add(client);
@@ -115,7 +116,7 @@ function watchTrackerStatus(torrent: Torrent): void {
     });
 }
 
-/** Guard discovery before metadata is available, including torrents born paused. */
+/** Aplica a política de URLs antes de abrir a rede, inclusive antes dos metadados. */
 export function configureTorrentNetwork(torrent: Torrent, budget?: NetworkBudget): void {
     if (configured.has(torrent)) return;
     configured.add(torrent);
@@ -167,19 +168,31 @@ export function configureTorrentNetwork(torrent: Torrent, budget?: NetworkBudget
         t[method] = function (...args: unknown[]) {
             if (t.paused || t.destroyed) return;
             if (method === '_startDiscovery') {
-                setAnnounceList(
-                    torrent,
-                    [...new Set(getAnnounceList(torrent).map(normalizeUrl))].slice(
-                        0,
-                        MAX_TRACKERS_PER_TORRENT,
-                    ),
-                );
+                filterAnnounceList(torrent);
+            } else if (method === '_getMetadataFromServer') {
+                const sources = Array.isArray(t.xs) ? t.xs : [t.xs];
+                const allowed = sources.filter(isValidHttpSource);
+                t.xs = allowed;
+                if (allowed.length === 0) return;
+            } else if (!isValidHttpSource(args[0])) {
+                // Metadados tardios e resume também passam por addWebSeed.
+                return;
             }
             const result = original.apply(torrent, args);
             if (method === '_startDiscovery') watchTrackerStatus(torrent);
             return result;
         };
     }
+}
+
+/** Fontes de metadados e web seeds usam somente HTTP(S), preservando path/query. */
+function isValidHttpSource(url: unknown): url is string {
+    return typeof url === 'string' && /^https?:\/\//.test(url) && isValidTrackerUrl(url);
+}
+
+function filterAnnounceList(torrent: Torrent): void {
+    const allowed = getAnnounceList(torrent).filter(isValidTrackerUrl).map(normalizeUrl);
+    setAnnounceList(torrent, [...new Set(allowed)].slice(0, MAX_TRACKERS_PER_TORRENT));
 }
 
 function normalizeUrl(url: string): string {
@@ -212,7 +225,7 @@ export function stopTorrentNetwork(torrent: Torrent): Promise<void> {
         });
     });
     stopping.set(torrent, result);
-    result.finally(() => stopping.delete(torrent)).catch(() => { });
+    result.finally(() => stopping.delete(torrent)).catch(() => {});
     return result;
 }
 
@@ -312,7 +325,7 @@ export function destroyInternalTracker(
     if (trackers && index >= 0) {
         const [tracker] = trackers.splice(index, 1);
         if (!tracker) return false;
-        tracker.destroy?.(() => { });
+        tracker.destroy?.(() => {});
         if (discovery) discovery._announce = [...getAnnounceList(torrent)];
         return true;
     }
@@ -341,10 +354,11 @@ export function addTrackerToTorrent(torrent: Torrent, url: string): boolean {
             const discovery = t.discovery as Discovery | undefined;
             if (t.paused || t.destroyed || !discovery || discovery.destroyed || !discovery.tracker)
                 return;
+            filterAnnounceList(torrent);
             discovery._announce = [...getAnnounceList(torrent)];
             try {
                 const old = discovery.tracker;
-                if (old) old.destroy(() => { });
+                if (old) old.destroy(() => {});
                 discovery.tracker = discovery._createTracker();
                 watchTrackerStatus(torrent);
             } catch (err) {
