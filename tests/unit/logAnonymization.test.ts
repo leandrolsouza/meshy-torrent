@@ -522,7 +522,7 @@ describe('DownloadManager — anonimização de infoHash nos logs (Requisitos 10
         (mockLog.warn as jest.Mock).mockClear();
         (mockLog.error as jest.Mock).mockClear();
 
-        await manager.remove(FULL_INFO_HASH, false);
+        await expect(manager.remove(FULL_INFO_HASH, false)).rejects.toThrow('remoção falhou');
 
         const warnLines = collectLogLines(mockLog.warn);
         // O hash completo não deve aparecer nos warns

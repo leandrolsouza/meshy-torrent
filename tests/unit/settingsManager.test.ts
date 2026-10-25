@@ -1,4 +1,6 @@
-import { createSettingsManager, SettingsStore } from '../../main/settingsManager';
+import ElectronStore from 'electron-store';
+import { createSettingsManager } from '../../main/settingsManager';
+import type { SettingsStore } from '../../main/settingsManager';
 import fc from 'fast-check';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -13,6 +15,9 @@ function createFakeStore(initial: Record<string, unknown> = {}): SettingsStore {
         get: (key) => data.get(key) as any,
         set: (key, value) => {
             data.set(key, value);
+        },
+        setMany: (values) => {
+            for (const [key, value] of Object.entries(values)) data.set(key, value);
         },
     };
 }
@@ -90,6 +95,70 @@ describe('SettingsManager.get()', () => {
 // ─── set() ────────────────────────────────────────────────────────────────────
 
 describe('SettingsManager.set()', () => {
+    function setupPersistedManager() {
+        const manager = createSettingsManager({ getDownloadsPath: () => FAKE_DOWNLOADS_PATH });
+        const store = jest.mocked(ElectronStore).mock.results.slice(-1)[0].value as {
+            get: (key: string) => unknown;
+            set: jest.Mock<void, [string | Record<string, unknown>, unknown?]>;
+        };
+        store.set.mockClear();
+        return { manager, store };
+    }
+
+    it('grava todos os campos em uma única operação do armazenamento', () => {
+        const { manager, store } = setupPersistedManager();
+        const partial = { downloadSpeedLimit: 300, uploadSpeedLimit: 150, dhtEnabled: false };
+
+        manager.set(partial);
+
+        expect(store.set).toHaveBeenCalledTimes(1);
+        expect(store.set).toHaveBeenCalledWith(partial);
+        expect(manager.get()).toMatchObject(partial);
+    });
+
+    it('preserva todos os valores anteriores quando a gravação do conjunto falha', () => {
+        const { manager, store } = setupPersistedManager();
+        manager.set({ downloadSpeedLimit: 100, uploadSpeedLimit: 50 });
+        const previous = manager.get();
+        const write = store.set.getMockImplementation()!;
+        store.set.mockImplementation((key, value) => {
+            if (typeof key === 'object' || key === 'uploadSpeedLimit')
+                throw new Error('Falha de gravação');
+            write(key, value);
+        });
+
+        expect(() => manager.set({ downloadSpeedLimit: 300, uploadSpeedLimit: 150 })).toThrow(
+            'Falha de gravação',
+        );
+
+        expect(manager.get()).toEqual(previous);
+        expect(store.get('downloadSpeedLimit')).toBe(100);
+        expect(store.get('uploadSpeedLimit')).toBe(50);
+    });
+
+    it('filtra campos desconhecidos e indefinidos sem sobrescrever a versão ou outros valores', () => {
+        const { manager, store } = setupPersistedManager();
+        manager.set({ downloadSpeedLimit: 100, uploadSpeedLimit: 50 });
+        store.set.mockClear();
+        const partial = { downloadSpeedLimit: 300, uploadSpeedLimit: undefined, schemaVersion: 99 };
+
+        manager.set(partial);
+
+        expect(store.set).toHaveBeenCalledTimes(1);
+        expect(store.set).toHaveBeenCalledWith({ downloadSpeedLimit: 300 });
+        expect(manager.get()).toMatchObject({ downloadSpeedLimit: 300, uploadSpeedLimit: 50 });
+        expect(store.get('schemaVersion')).toBe(1);
+    });
+
+    it('não grava quando não há campos definidos para atualizar', () => {
+        const { manager, store } = setupPersistedManager();
+
+        manager.set({});
+        manager.set({ downloadSpeedLimit: undefined });
+
+        expect(store.set).not.toHaveBeenCalled();
+    });
+
     it('persists a new destinationFolder', () => {
         const manager = makeManager();
         manager.set({ destinationFolder: '/new/path' });

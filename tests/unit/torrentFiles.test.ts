@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink } from 'fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, rmdir, symlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createTorrentFilesService, resolveTorrentFile } from '../../main/torrentFiles';
@@ -31,6 +31,31 @@ test('copiar mantém originais até commit e ignora arquivos ausentes sem perder
     expect(await readFile(join(source, 'Archive/a.bin'), 'utf8')).toBe('hello');
     expect(await readFile(join(destination, 'Archive/a.bin'), 'utf8')).toBe('hello');
     expect(await move.commit()).toBe(true);
+    expect(await readdir(join(source, 'Archive'))).toEqual([]);
+});
+
+test('excluir usa apenas o catálogo, preserva arquivos alheios e permite repetição', async () => {
+    await writeFile(join(source, 'Archive/b.bin'), 'other');
+    await writeFile(join(source, 'keep.txt'), 'keep');
+    const service = createTorrentFilesService();
+
+    await service.remove(source, files);
+    await service.remove(source, files);
+
+    expect(await readdir(join(source, 'Archive'))).toEqual([]);
+    expect(await readFile(join(source, 'keep.txt'), 'utf8')).toBe('keep');
+});
+
+test('uma falha parcial de exclusão é comunicada e permite nova tentativa', async () => {
+    // Um diretório no lugar do segundo arquivo faz unlink falhar após excluir o primeiro.
+    await mkdir(join(source, 'Archive/b.bin'));
+    const service = createTorrentFilesService();
+
+    await expect(service.remove(source, files)).rejects.toThrow();
+    expect(await readdir(join(source, 'Archive'))).toEqual(['b.bin']);
+    await rmdir(join(source, 'Archive/b.bin'));
+    await writeFile(join(source, 'Archive/b.bin'), 'other');
+    await expect(service.remove(source, files)).resolves.toBeUndefined();
     expect(await readdir(join(source, 'Archive'))).toEqual([]);
 });
 test('rollback remove apenas as cópias criadas e preserva arquivos alheios', async () => {
@@ -67,6 +92,14 @@ test.each([
 ])('rejeita caminho fora da pasta: %s', async (path) => {
     await expect(resolveTorrentFile(destination, path)).rejects.toThrow('unsafePath');
 });
+
+test('um caminho inválido no catálogo impede excluir até mesmo os arquivos válidos', async () => {
+    const invalid = { ...files[1]!, path: '../outside.bin' };
+    await expect(createTorrentFilesService().remove(source, [files[0]!, invalid])).rejects.toThrow(
+        'unsafePath',
+    );
+    expect(await readFile(join(source, 'Archive/a.bin'), 'utf8')).toBe('hello');
+});
 test('rejeita symlink/junction no destino antes de copiar ou excluir arquivos', async () => {
     // Junction no Windows dispensa privilégios para criar symlinks. Tanto o alvo
     // quanto o link pertencem exclusivamente ao diretório temporário deste teste.
@@ -81,6 +114,9 @@ test('rejeita symlink/junction no destino antes de copiar ou excluir arquivos', 
 
     await expect(resolveTorrentFile(destination, 'Archive/a.bin')).rejects.toThrow('unsafePath');
     await expect(createTorrentFilesService().copy(source, destination, files)).rejects.toThrow(
+        'unsafePath',
+    );
+    await expect(createTorrentFilesService().remove(destination, files)).rejects.toThrow(
         'unsafePath',
     );
     expect(await readFile(join(source, 'Archive/a.bin'), 'utf8')).toBe('hello');

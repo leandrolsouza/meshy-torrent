@@ -24,6 +24,10 @@ export function registerSettingsIpcHandlers({
     errorCodes: ErrorCodes,
     applyBandwidth,
 }: IpcHandlerContext): void {
+    // O valor salvo representa a intenção; uma falha deixa sua aplicação pendente.
+    // Ao iniciar outro processo, a engine já recebe as configurações persistidas.
+    let networkRestartPending = false;
+
     // ── settings:get ──────────────────────────────────────────────────────────
     trackedHandle('settings:get', async (_event): Promise<IPCResponse<AppSettings>> => {
         try {
@@ -73,9 +77,10 @@ export function registerSettingsIpcHandlers({
                         partial.pexEnabled !== previousSettings.pexEnabled) ||
                     (partial.utpEnabled !== undefined &&
                         partial.utpEnabled !== previousSettings.utpEnabled);
+                const needsNetworkRestart = networkChanged || networkRestartPending;
 
                 if (
-                    networkChanged &&
+                    needsNetworkRestart &&
                     torrentEngine &&
                     downloadManager.getAll().some((item) => item.fileOperation)
                 )
@@ -88,8 +93,9 @@ export function registerSettingsIpcHandlers({
                     downloadManager.setMaxConcurrentDownloads(partial.maxConcurrentDownloads);
                 }
 
-                if (networkChanged && torrentEngine) {
+                if (needsNetworkRestart && torrentEngine) {
                     const currentSettings = settingsManager.get();
+                    networkRestartPending = true;
                     await torrentEngine.restart({
                         downloadPath: currentSettings.destinationFolder,
                         downloadSpeedLimit: currentSettings.downloadSpeedLimit,
@@ -98,6 +104,7 @@ export function registerSettingsIpcHandlers({
                         pexEnabled: currentSettings.pexEnabled,
                         utpEnabled: currentSettings.utpEnabled,
                     });
+                    networkRestartPending = false;
                 }
 
                 if (
@@ -107,7 +114,7 @@ export function registerSettingsIpcHandlers({
                     await downloadManager.applySeedingSettings();
                 }
                 const updated = settingsManager.get();
-                applyBandwidth(networkChanged);
+                applyBandwidth(needsNetworkRestart);
                 return ok(updated);
             } catch (err) {
                 return failWithLog('settings:set', err);

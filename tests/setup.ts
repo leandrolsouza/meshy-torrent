@@ -18,7 +18,10 @@ jest.mock('electron-store', () => {
             const data = new Map<string, unknown>();
             return {
                 get: jest.fn((key: string) => data.get(key)),
-                set: jest.fn((key: string, value: unknown) => data.set(key, value)),
+                set: jest.fn((key: string | Record<string, unknown>, value?: unknown) => {
+                    if (typeof key === 'string') data.set(key, value);
+                    else for (const [name, entry] of Object.entries(key)) data.set(name, entry);
+                }),
             };
         }),
     };

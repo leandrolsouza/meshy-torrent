@@ -19,7 +19,9 @@ Os contratos ficam em [shared/types.ts](../shared/types.ts), a decisão de slots
 em [main/downloadManager.ts](../main/downloadManager.ts), e a adaptação de rede
 em [main/torrentEngine.ts](../main/torrentEngine.ts) e
 [main/webtorrentInternals.ts](../main/webtorrentInternals.ts).
-O comando IPC `torrent:toggle-seed` valida o hash e retorna o item atualizado.
+O comando IPC `torrent:set-seeding-enabled` recebe `{ infoHash, enabled }`, valida o hash
+e o booleano e retorna o item atualizado. O estado desejado é explícito: repetir a mesma
+solicitação, inclusive após falha de persistência, mantém a escolha de ativar ou desativar.
 Sessões antigas recebem os defaults; `seedingDisabled` ausente significa elegível.
 
 ## Verificação

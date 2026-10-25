@@ -1,6 +1,6 @@
 {
     "name": "meshy",
-    "version": "0.1.0-beta.9",
+    "version": "0.1.0-beta.10",
     "description": "Meshy Torrent — cliente torrent desktop multiplataforma",
     "main": "out/main/index.mjs",
     "scripts": {

@@ -39,7 +39,14 @@ store.set({
     pexEnabled: false,
     utpEnabled: false,
 });
-const settings = createSettingsManager({ store, getDownloadsPath: () => app.getPath('downloads') });
+const settings = createSettingsManager({
+    store: {
+        get: (key) => store.get(key),
+        set: (key, value) => store.set(key, value),
+        setMany: (values) => store.set(values),
+    },
+    getDownloadsPath: () => app.getPath('downloads'),
+});
 const engine = createTorrentEngine(
     {
         downloadPath: app.getPath('downloads'),

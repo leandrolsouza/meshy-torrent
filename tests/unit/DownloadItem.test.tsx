@@ -176,7 +176,7 @@ describe('DownloadItem — seeding', () => {
         Object.defineProperty(window, 'meshy', {
             configurable: true,
             value: {
-                toggleSeed: jest
+                setSeedingEnabled: jest
                     .fn()
                     .mockResolvedValue({ success: false, error: 'error.engine.restarting' }),
             },
@@ -195,9 +195,9 @@ describe('DownloadItem — seeding', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'Motor de torrents está reiniciando',
         );
-        expect(window.meshy.toggleSeed).toHaveBeenCalledWith(createItem().infoHash);
+        expect(window.meshy.setSeedingEnabled).toHaveBeenCalledWith(createItem().infoHash, false);
     });
-    it('identifica seed desativado e oferece retomada', () => {
+    it('identifica seed desativado e solicita explicitamente sua retomada', async () => {
         renderWithIntl(
             <DownloadItem
                 item={createItem({ status: 'completed', seedingDisabled: true })}
@@ -206,5 +206,10 @@ describe('DownloadItem — seeding', () => {
         );
         expect(screen.getByText('Seed desativado')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Retomar seed' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Retomar seed' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Motor de torrents está reiniciando',
+        );
+        expect(window.meshy.setSeedingEnabled).toHaveBeenCalledWith(createItem().infoHash, true);
     });
 });

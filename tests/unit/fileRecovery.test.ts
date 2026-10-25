@@ -48,11 +48,12 @@ async function setup(downloaded = 50, withMetadata = true, shared = false, queue
             return { infoHash: hash, status: 'paused', name: 'Archive' };
         }),
         isRestarting: () => false,
-        resume: jest.fn(async () => { }),
+        resume: jest.fn(async () => {}),
     });
-    const move = { commit: jest.fn(async () => true), rollback: jest.fn(async () => { }) };
+    const move = { commit: jest.fn(async () => true), rollback: jest.fn(async () => {}) };
     const torrentFiles = {
-        validate: jest.fn(async () => { }),
+        remove: jest.fn(async () => {}),
+        validate: jest.fn(async () => {}),
         existingBytes: jest.fn(async () => 70),
         copy: jest.fn(async () => move),
     };

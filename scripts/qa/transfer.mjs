@@ -79,6 +79,9 @@ const newManager = () => {
         store: {
             get: (key) => settingsData.get(key),
             set: (key, value) => settingsData.set(key, value),
+            setMany: (values) => {
+                for (const [key, value] of Object.entries(values)) settingsData.set(key, value);
+            },
         },
         getDownloadsPath: () => destination,
     });
@@ -147,10 +150,10 @@ try {
     findings.push(
         'sessão salva em disco, cliente recriado e download concluído com SHA-256 idêntico',
     );
-    await current.manager.toggleSeed(hash);
+    await current.manager.setSeedingEnabled(hash, false);
     assert.equal(current.manager.getAll()[0].status, 'completed');
     assert.equal(torrent.wires.length, 0, 'Parar seed encerra os peers');
-    await current.manager.toggleSeed(hash);
+    await current.manager.setSeedingEnabled(hash, true);
     assert.equal(current.manager.getAll()[0].status, 'seeding');
     current.manager.persistSession();
     await closeClient(current.client);

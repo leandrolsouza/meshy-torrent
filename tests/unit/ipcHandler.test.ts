@@ -134,7 +134,7 @@ describe('registerIpcHandlers — IPC channel registration (Requirement 8.1)', (
         'torrent:add-file',
         'torrent:add-file-buffer',
         'torrent:add-magnet',
-        'torrent:toggle-seed',
+        'torrent:set-seeding-enabled',
         'torrent:pause',
         'torrent:resume',
         'torrent:remove',
@@ -769,7 +769,7 @@ describe('Property 18: Resposta IPC sempre tem forma estruturada', () => {
     const ALL_CHANNELS = [
         'torrent:add-file',
         'torrent:add-magnet',
-        'torrent:toggle-seed',
+        'torrent:set-seeding-enabled',
         'torrent:pause',
         'torrent:resume',
         'torrent:remove',
@@ -842,7 +842,7 @@ describe('Property 18: Resposta IPC sempre tem forma estruturada', () => {
         const CHANNELS_WITH_REQUIRED_PARAMS = [
             'torrent:add-file',
             'torrent:add-magnet',
-            'torrent:toggle-seed',
+            'torrent:set-seeding-enabled',
             'torrent:pause',
             'torrent:resume',
             'torrent:remove',
@@ -1310,6 +1310,144 @@ describe('registerIpcHandlers — validação de dhtEnabled/pexEnabled/utpEnable
 
 // ─── Tests: Detecção de mudança e acionamento de restart (Task 5.6) ───────────
 
+describe('registerIpcHandlers — reaplicação de configurações após falha de restart', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    function setup() {
+        const dm = makeMockDownloadManager();
+        const sm = makeMockSettingsManager();
+        let saved = sm.get();
+        jest.mocked(sm.get).mockImplementation(() => ({ ...saved }));
+        jest.mocked(sm.set).mockImplementation((partial) => {
+            saved = { ...saved, ...partial };
+        });
+        const engine = {
+            ...makeMockTorrentEngine(),
+            isRestarting: jest.fn(() => false),
+            restart: jest.fn<Promise<void>, []>().mockResolvedValue(undefined),
+            setDownloadSpeedLimit: jest.fn(),
+            setUploadSpeedLimit: jest.fn(),
+            getMetadata: jest.fn(),
+            getPeers: jest.fn(),
+            getPieces: jest.fn(),
+        };
+        registerIpcHandlers(dm, sm, engine);
+        const handler = mockIpcMain.handle.mock.calls.find(
+            ([channel]) => channel === 'settings:set',
+        )![1] as (_event: unknown, payload: unknown) => Promise<unknown>;
+        return { dm, sm, engine, set: (payload: unknown) => handler(null, payload) };
+    }
+
+    it.each(['dhtEnabled', 'pexEnabled', 'utpEnabled'] as const)(
+        'repete o restart de %s até confirmar sucesso e depois evita reinícios desnecessários',
+        async (key) => {
+            const { sm, engine, set } = setup();
+            engine.restart
+                .mockRejectedValueOnce(new Error('Falha de restart'))
+                .mockRejectedValueOnce(new Error('Falha de restart'));
+            const partial = { [key]: false };
+
+            expect(await set(partial)).toEqual({
+                success: false,
+                error: ErrorCodes.OPERATION_FAILED,
+            });
+            expect(sm.get()[key]).toBe(false);
+            expect(await set(partial)).toEqual({
+                success: false,
+                error: ErrorCodes.OPERATION_FAILED,
+            });
+            expect(engine.restart).toHaveBeenCalledTimes(2);
+            expect(await set(partial)).toEqual({ success: true, data: sm.get() });
+            expect(engine.restart).toHaveBeenCalledTimes(3);
+            expect(engine.restart).toHaveBeenLastCalledWith(expect.objectContaining(partial));
+
+            expect(await set(partial)).toEqual({ success: true, data: sm.get() });
+            expect(engine.restart).toHaveBeenCalledTimes(3);
+        },
+    );
+
+    it('reaplica os valores atuais junto de outra configuração após a falha', async () => {
+        const { engine, sm, set } = setup();
+        engine.restart.mockRejectedValueOnce(new Error('Falha de restart'));
+        await set({ dhtEnabled: false });
+
+        expect(await set({ downloadSpeedLimit: 500 })).toEqual({ success: true, data: sm.get() });
+        expect(engine.restart).toHaveBeenCalledTimes(2);
+        expect(engine.restart).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                dhtEnabled: false,
+                downloadSpeedLimit: 500,
+            }),
+        );
+    });
+
+    it('reinicia também ao voltar aos valores anteriores após a falha', async () => {
+        const { engine, sm, set } = setup();
+        engine.restart.mockRejectedValueOnce(new Error('Falha de restart'));
+        await set({ dhtEnabled: false });
+
+        expect(await set({ dhtEnabled: true })).toEqual({ success: true, data: sm.get() });
+        expect(engine.restart).toHaveBeenCalledTimes(2);
+        expect(engine.restart).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dhtEnabled: true }),
+        );
+    });
+
+    it('aguarda a limpeza do restart antes de permitir a reaplicação', async () => {
+        const { engine, sm, set } = setup();
+        engine.restart.mockRejectedValueOnce(new Error('Restart expirou'));
+        await set({ dhtEnabled: false });
+        engine.isRestarting.mockReturnValue(true);
+        jest.mocked(sm.set).mockClear();
+
+        expect(await set({ dhtEnabled: false })).toEqual({
+            success: false,
+            error: ErrorCodes.ENGINE_RESTARTING,
+        });
+        expect(sm.set).not.toHaveBeenCalled();
+        expect(engine.restart).toHaveBeenCalledTimes(1);
+
+        engine.isRestarting.mockReturnValue(false);
+        expect(await set({ dhtEnabled: false })).toEqual({ success: true, data: sm.get() });
+        expect(engine.restart).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserva a pendência quando uma operação de arquivos bloqueia a reaplicação', async () => {
+        const { engine, dm, sm, set } = setup();
+        engine.restart.mockRejectedValueOnce(new Error('Falha de restart'));
+        await set({ dhtEnabled: false });
+        jest.mocked(dm.getAll).mockReturnValue([{ fileOperation: 'move' } as DownloadItem]);
+        jest.mocked(sm.set).mockClear();
+
+        expect(await set({ dhtEnabled: false })).toEqual({
+            success: false,
+            error: ErrorCodes.FILE_OPERATION_BUSY,
+        });
+        expect(sm.set).not.toHaveBeenCalled();
+        expect(engine.restart).toHaveBeenCalledTimes(1);
+
+        jest.mocked(dm.getAll).mockReturnValue([]);
+        expect(await set({ dhtEnabled: false })).toEqual({ success: true, data: sm.get() });
+        expect(engine.restart).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserva a pendência quando uma solicitação inválida é rejeitada', async () => {
+        const { engine, sm, set } = setup();
+        engine.restart.mockRejectedValueOnce(new Error('Falha de restart'));
+        await set({ dhtEnabled: false });
+
+        expect(await set({ dhtEnabled: 'false' })).toEqual({
+            success: false,
+            error: ErrorCodes.INVALID_PARAMS,
+        });
+        expect(engine.restart).toHaveBeenCalledTimes(1);
+        expect(await set({ dhtEnabled: false })).toEqual({ success: true, data: sm.get() });
+        expect(engine.restart).toHaveBeenCalledTimes(2);
+    });
+});
+
 describe('registerIpcHandlers — detecção de mudança de rede e restart', () => {
     function getHandler(
         channel: string,
@@ -1613,7 +1751,7 @@ describe('registerIpcHandlers — rejeição de operações durante restart do m
     const GUARDED_CHANNELS = [
         'torrent:add-file',
         'torrent:add-magnet',
-        'torrent:toggle-seed',
+        'torrent:set-seeding-enabled',
         'torrent:pause',
         'torrent:resume',
         'torrent:remove',
@@ -1623,6 +1761,7 @@ describe('registerIpcHandlers — rejeição de operações durante restart do m
     const VALID_PAYLOADS: Record<string, unknown> = {
         'torrent:add-file': { filePath: '/path/to/file.torrent' },
         'torrent:add-magnet': { magnetUri: 'magnet:?xt=urn:btih:' + 'a'.repeat(40) },
+        'torrent:set-seeding-enabled': { infoHash: 'a'.repeat(40), enabled: false },
         'torrent:pause': { infoHash: 'a'.repeat(40) },
         'torrent:resume': { infoHash: 'a'.repeat(40) },
         'torrent:remove': { infoHash: 'a'.repeat(40), deleteFiles: false },

@@ -44,6 +44,7 @@ export interface TorrentFilesService {
     existingBytes(folder: string, files: TorrentFileInfo[]): Promise<number>;
     validate(folder: string, files: TorrentFileInfo[]): Promise<void>;
     copy(source: string, destination: string, files: TorrentFileInfo[]): Promise<FileMove>;
+    remove(folder: string, files: TorrentFileInfo[]): Promise<void>;
 }
 
 export function createTorrentFilesService(): TorrentFilesService {
@@ -68,6 +69,26 @@ export function createTorrentFilesService(): TorrentFilesService {
         return found;
     };
     return {
+        async remove(folder, files) {
+            // Valida o catálogo inteiro antes de excluir qualquer arquivo.
+            const paths: string[] = [];
+            for (const file of files) {
+                try {
+                    await resolveTorrentFile(folder, file.path);
+                    paths.push(file.path);
+                } catch (error) {
+                    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+                }
+            }
+            for (const path of paths) {
+                try {
+                    // Revalida contenção e symlinks imediatamente antes de excluir.
+                    await unlink(await resolveTorrentFile(folder, path));
+                } catch (error) {
+                    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+                }
+            }
+        },
         async validate(folder, files) {
             await access(folder, constants.R_OK | constants.W_OK);
             for (const file of files) await resolveTorrentFile(folder, file.path);

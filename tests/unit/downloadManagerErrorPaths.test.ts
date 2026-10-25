@@ -7,7 +7,7 @@
  *   - pause(): revert de status quando engine.pause falha
  *   - resume(): status → 'error' quando engine.resume falha
  *   - _processQueue(): status → 'error' + logger.error quando addMagnetLink falha
- *   - remove(): logger.warn quando engine.remove falha (item ainda é removido)
+ *   - remove(): preserva o item e comunica falha quando engine.remove rejeita
  *
  * _Requisitos: 6.5, 6.6_
  */
@@ -520,51 +520,61 @@ describe('DownloadManager._processQueue() — falha ao iniciar torrent da fila (
 
 // ─── remove() — logger.warn quando engine.remove falha (Requisitos 6.5, 6.6) ──
 
-describe('DownloadManager.remove() — logger.warn quando engine.remove falha (Requisitos 6.5, 6.6)', () => {
+describe('DownloadManager.remove() — recuperação quando engine.remove falha', () => {
     beforeEach(() => {
         mockExistsSync.mockReturnValue(true);
         mockAccessSync.mockReturnValue(undefined);
     });
 
-    it('remove o item do estado interno e chama logger.warn quando engine.remove falha', async () => {
+    it.each([false, true])(
+        'preserva o item e rejeita quando engine.remove falha (deleteFiles=%s)',
+        async (deleteFiles) => {
+            const engine = makeMockEngine(makeTorrentInfo({ status: 'downloading' }));
+            (engine.addMagnetLink as jest.Mock).mockResolvedValue(
+                makeTorrentInfo({ status: 'downloading' }),
+            );
+
+            // engine.remove lança ao ser chamado
+            (engine.remove as jest.Mock).mockRejectedValue(new Error('engine remove error'));
+
+            const mockLog = makeMockLogger();
+            const settings = makeMockSettings();
+            const manager = createDownloadManager(engine, settings, undefined, mockLog, {
+                disableCleanupTimer: true,
+            });
+
+            await manager.addMagnetLink(VALID_MAGNET);
+            expect(manager.getAll()).toHaveLength(1);
+
+            await expect(manager.remove(INFO_HASH, deleteFiles)).rejects.toThrow(
+                'engine remove error',
+            );
+
+            expect(manager.getAll()).toEqual([
+                expect.objectContaining({ infoHash: INFO_HASH, status: 'error' }),
+            ]);
+
+            // logger.warn deve ter sido chamado com mensagem sobre falha ao remover do engine
+            expect(mockLog.warn).toHaveBeenCalled();
+            const warnArgs: unknown[][] = (mockLog.warn as jest.Mock).mock.calls;
+            const removeFailMessage = warnArgs.some((args) =>
+                String(args[0]).includes('Falha ao remover do engine'),
+            );
+            expect(removeFailMessage).toBe(true);
+        },
+    );
+
+    it('só emite remove após uma nova tentativa bem-sucedida e ignora eventos tardios', async () => {
         const engine = makeMockEngine(makeTorrentInfo({ status: 'downloading' }));
         (engine.addMagnetLink as jest.Mock).mockResolvedValue(
             makeTorrentInfo({ status: 'downloading' }),
         );
-
-        // engine.remove lança ao ser chamado
-        (engine.remove as jest.Mock).mockRejectedValue(new Error('engine remove error'));
-
-        const mockLog = makeMockLogger();
-        const settings = makeMockSettings();
-        const manager = createDownloadManager(engine, settings, undefined, mockLog, {
-            disableCleanupTimer: true,
+        jest.mocked(engine.remove).mockImplementationOnce(async () => {
+            engine.emit('done', INFO_HASH);
+            engine.emit('progress', makeTorrentInfo({ status: 'downloading', progress: 1 }));
+            engine.emit('error', INFO_HASH, new Error('Evento tardio'));
+            throw new Error('engine remove error');
         });
-
-        await manager.addMagnetLink(VALID_MAGNET);
-        expect(manager.getAll()).toHaveLength(1);
-
-        // remove() deve resolver (não rejeitar) mesmo com engine falhando
-        await expect(manager.remove(INFO_HASH, false)).resolves.toBeUndefined();
-
-        // Item deve ter sido removido do estado interno
-        expect(manager.getAll()).toHaveLength(0);
-
-        // logger.warn deve ter sido chamado com mensagem sobre falha ao remover do engine
-        expect(mockLog.warn).toHaveBeenCalled();
-        const warnArgs: unknown[][] = (mockLog.warn as jest.Mock).mock.calls;
-        const removeFailMessage = warnArgs.some((args) =>
-            String(args[0]).includes('Falha ao remover do engine'),
-        );
-        expect(removeFailMessage).toBe(true);
-    });
-
-    it('emite evento remove mesmo quando engine.remove falha', async () => {
-        const engine = makeMockEngine(makeTorrentInfo({ status: 'downloading' }));
-        (engine.addMagnetLink as jest.Mock).mockResolvedValue(
-            makeTorrentInfo({ status: 'downloading' }),
-        );
-        (engine.remove as jest.Mock).mockRejectedValue(new Error('engine remove error'));
 
         const settings = makeMockSettings();
         const manager = createDownloadManager(engine, settings, undefined, undefined, {
@@ -575,10 +585,16 @@ describe('DownloadManager.remove() — logger.warn quando engine.remove falha (R
 
         const removeEvents: string[] = [];
         manager.on('remove', (hash) => removeEvents.push(hash));
+        const updates: DownloadItem[] = [];
+        manager.on('update', (item) => updates.push(item));
+
+        await expect(manager.remove(INFO_HASH, false)).rejects.toThrow('engine remove error');
+        expect(removeEvents).toEqual([]);
+        expect(manager.getAll()[0]).toMatchObject({ status: 'error', progress: 0 });
+        expect(updates).toEqual([expect.objectContaining({ status: 'error', progress: 0 })]);
 
         await manager.remove(INFO_HASH, false);
-
-        // Evento 'remove' deve ter sido emitido mesmo com engine falhando
-        expect(removeEvents).toContain(INFO_HASH);
+        expect(removeEvents).toEqual([INFO_HASH]);
+        expect(manager.getAll()).toEqual([]);
     });
 });

@@ -639,7 +639,10 @@ export const DownloadItem = React.memo(function DownloadItem({
                             setSeedBusy(true);
                             setActionError(null);
                             try {
-                                const response = await window.meshy.toggleSeed(item.infoHash);
+                                const response = await window.meshy.setSeedingEnabled(
+                                    item.infoHash,
+                                    item.status !== 'seeding',
+                                );
                                 if (response.success)
                                     useDownloadStore.getState().updateItem(response.data);
                                 else setActionError(resolveErrorMessage(intl, response.error));

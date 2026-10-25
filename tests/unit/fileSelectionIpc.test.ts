@@ -47,6 +47,7 @@ function makeMockDownloadManager(items: DownloadItem[] = []): DownloadManager {
         getAll: jest.fn().mockReturnValue(items),
         restoreSession: jest.fn().mockResolvedValue(undefined),
         persistSession: jest.fn(),
+        setFileSelection: jest.fn(),
         on: jest.fn(),
     } as unknown as DownloadManager;
 }
@@ -263,7 +264,7 @@ describe('torrent:set-file-selection handler', () => {
         const sm = makeMockSettingsManager();
         const updatedFiles = SAMPLE_FILES.map((f) => ({ ...f, selected: f.index === 0 }));
         const engine = makeMockTorrentEngine();
-        (engine.setFileSelection as jest.Mock).mockReturnValue(updatedFiles);
+        jest.mocked(dm.setFileSelection).mockReturnValue(updatedFiles);
 
         registerIpcHandlers(dm, sm, engine);
 
@@ -277,7 +278,25 @@ describe('torrent:set-file-selection handler', () => {
 
         expect(response.success).toBe(true);
         expect(response.data).toEqual(updatedFiles);
-        expect(engine.setFileSelection as jest.Mock).toHaveBeenCalledWith('abc123', [0]);
+        expect(dm.setFileSelection).toHaveBeenCalledWith('abc123', [0]);
+        expect(engine.setFileSelection).not.toHaveBeenCalled();
+    });
+
+    it('retorna erro quando o gerenciador não consegue persistir a seleção', async () => {
+        const dm = makeMockDownloadManager([makeDownloadItem()]);
+        jest.mocked(dm.setFileSelection).mockImplementation(() => {
+            throw new Error('Falha ao salvar sessão');
+        });
+        const engine = makeMockTorrentEngine();
+        registerIpcHandlers(dm, makeMockSettingsManager(), engine);
+
+        const response = await getHandler('torrent:set-file-selection')!(null, {
+            infoHash: 'abc123',
+            selectedIndices: [0],
+        });
+
+        expect(response).toEqual({ success: false, error: ErrorCodes.OPERATION_FAILED });
+        expect(engine.setFileSelection).not.toHaveBeenCalled();
     });
 
     it('returns error when torrent is not found', async () => {

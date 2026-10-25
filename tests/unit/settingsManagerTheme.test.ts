@@ -1,4 +1,5 @@
-import { createSettingsManager, SettingsStore } from '../../main/settingsManager';
+import { createSettingsManager } from '../../main/settingsManager';
+import type { SettingsStore } from '../../main/settingsManager';
 import fc from 'fast-check';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -13,6 +14,9 @@ function createFakeStore(initial: Record<string, unknown> = {}): SettingsStore {
         get: (key) => data.get(key) as any,
         set: (key, value) => {
             data.set(key, value);
+        },
+        setMany: (values) => {
+            for (const [key, value] of Object.entries(values)) data.set(key, value);
         },
     };
 }

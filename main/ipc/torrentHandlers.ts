@@ -386,21 +386,27 @@ export function registerTorrentIpcHandlers({
     );
 
     trackedHandle(
-        'torrent:toggle-seed',
+        'torrent:set-seeding-enabled',
         async (_event, payload: unknown): Promise<IPCResponse<DownloadItem>> => {
             try {
                 if (torrentEngine?.isRestarting()) return fail(ErrorCodes.ENGINE_RESTARTING);
-                const result = validatePayload<{ infoHash: string }>(payload, infoHashSchema);
+                const result = validatePayload<{ infoHash: string; enabled: boolean }>(payload, {
+                    ...infoHashSchema,
+                    enabled: { type: 'boolean' },
+                });
                 if (!result.valid || !/^[a-f0-9]{40}$/i.test(result.data.infoHash))
                     return fail(ErrorCodes.INVALID_PARAMS);
                 return ok(
                     await withTimeout(
-                        downloadManager.toggleSeed(result.data.infoHash),
-                        'torrent:toggle-seed',
+                        downloadManager.setSeedingEnabled(
+                            result.data.infoHash,
+                            result.data.enabled,
+                        ),
+                        'torrent:set-seeding-enabled',
                     ),
                 );
             } catch (err) {
-                return failWithLog('torrent:toggle-seed', err);
+                return failWithLog('torrent:set-seeding-enabled', err);
             }
         },
     );
@@ -598,7 +604,7 @@ export function registerTorrentIpcHandlers({
                     }
                 }
 
-                const updatedFiles = torrentEngine.setFileSelection(infoHash, selectedIndices);
+                const updatedFiles = downloadManager.setFileSelection(infoHash, selectedIndices);
                 return ok(updatedFiles);
             } catch (err) {
                 return failWithLog('torrent:set-file-selection', err);

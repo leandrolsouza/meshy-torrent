@@ -283,7 +283,7 @@ export interface MeshyAPI {
     addTorrentFile(filePath: string): Promise<IPCResponse<DownloadItem>>;
     addTorrentFileBuffer(buffer: Uint8Array): Promise<IPCResponse<DownloadItem>>;
     addMagnetLink(magnetUri: string): Promise<IPCResponse<DownloadItem>>;
-    toggleSeed(infoHash: string): Promise<IPCResponse<DownloadItem>>;
+    setSeedingEnabled(infoHash: string, enabled: boolean): Promise<IPCResponse<DownloadItem>>;
     pause(infoHash: string): Promise<IPCResponse<void>>;
     resume(infoHash: string): Promise<IPCResponse<void>>;
     remove(infoHash: string, deleteFiles: boolean): Promise<IPCResponse<void>>;

@@ -50,7 +50,7 @@ export interface DownloadManager {
     addTorrentFile(filePath: string): Promise<DownloadItem>;
     addTorrentBuffer(buffer: Buffer): Promise<DownloadItem>;
     addMagnetLink(magnetUri: string): Promise<DownloadItem>;
-    toggleSeed(infoHash: string): Promise<DownloadItem>;
+    setSeedingEnabled(infoHash: string, enabled: boolean): Promise<DownloadItem>;
     applySeedingSettings(): Promise<void>;
     pause(infoHash: string): Promise<void>;
     resume(infoHash: string): Promise<void>;
@@ -150,6 +150,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     private readonly seedingSet = new Set<string>();
     private pendingAdds = 0;
     private readonly pendingHashes = new Set<string>();
+    private readonly removingHashes = new Set<string>();
     /** Tracks magnet URIs for queued items that need to be added to the engine later */
     private readonly queuedMagnetUris = new Map<string, string>();
     /** Armazena o magnetUri original de todos os torrents adicionados via magnet link (para persistência) */
@@ -232,7 +233,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
         });
         this.engine.on('progress', (info: TorrentInfo) => {
             const existing = this.items.get(info.infoHash);
-            if (!existing) return;
+            if (!existing || this.removingHashes.has(info.infoHash)) return;
 
             // Ignorar eventos de progresso para downloads já concluídos.
             // O WebTorrent continua emitindo 'download'/'upload' mesmo após
@@ -367,7 +368,12 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
 
         this.engine.on('done', (infoHash: string) => {
             const existing = this.items.get(infoHash);
-            if (!existing || existing.fileOperation || !this._isActiveStatus(existing.status))
+            if (
+                !existing ||
+                this.removingHashes.has(infoHash) ||
+                existing.fileOperation ||
+                !this._isActiveStatus(existing.status)
+            )
                 return;
 
             this._clearMetadataTimer(infoHash);
@@ -396,7 +402,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             this.log.error('[DownloadManager] Torrent error:', infoHash.slice(0, 8), err.message);
 
             const existing = this.items.get(infoHash);
-            if (!existing || existing.fileOperation) return;
+            if (!existing || this.removingHashes.has(infoHash) || existing.fileOperation) return;
 
             if (
                 (err as NodeJS.ErrnoException).code === 'ENOSPC' ||
@@ -1058,12 +1064,14 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
         this.persistSession();
     }
 
-    async toggleSeed(infoHash: string): Promise<DownloadItem> {
+    async setSeedingEnabled(infoHash: string, enabled: boolean): Promise<DownloadItem> {
+        if (typeof enabled !== 'boolean') throw new Error(ErrorCodes.INVALID_PARAMS);
         await this._withLock(infoHash, async () => {
             const item = this.items.get(infoHash);
             if (!item) throw new Error(ErrorCodes.TORRENT_NOT_FOUND);
-            if (item.fileOperation) throw new Error(ErrorCodes.FILE_OPERATION_BUSY);
-            const updated = { ...item, seedingDisabled: !item.seedingDisabled };
+            if (this.removingHashes.has(infoHash) || item.fileOperation)
+                throw new Error(ErrorCodes.FILE_OPERATION_BUSY);
+            const updated = { ...item, seedingDisabled: !enabled };
             if (updated.seedingDisabled && item.status === 'seeding') {
                 this.items.set(infoHash, { ...updated, status: 'completed', uploadSpeed: 0 });
                 try {
@@ -1452,7 +1460,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     // ── setFileSelection ───────────────────────────────────────────────────────
 
     setFileSelection(infoHash: string, selectedIndices: number[]): TorrentFileInfo[] {
-        if (this.items.get(infoHash)?.fileOperation)
+        if (this.removingHashes.has(infoHash) || this.items.get(infoHash)?.fileOperation)
             throw new Error(ErrorCodes.FILE_OPERATION_BUSY);
         const updatedFiles = this.engine.setFileSelection(infoHash, selectedIndices);
 
@@ -1476,6 +1484,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 totalFileCount: updatedFiles.length,
             };
             this.items.set(infoHash, updated);
+            this.persistSession();
             this.emit('update', updated);
         }
 
@@ -1485,6 +1494,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     // ── retryDownload ─────────────────────────────────────────────────────────
 
     async retryDownload(infoHash: string): Promise<DownloadItem> {
+        if (this.removingHashes.has(infoHash)) throw new Error(ErrorCodes.FILE_OPERATION_BUSY);
         const existing = this.items.get(infoHash);
         if (!existing) {
             throw new Error(`Torrent não encontrado: ${infoHash}`);
@@ -1643,47 +1653,68 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     async remove(infoHash: string, deleteFiles: boolean): Promise<void> {
         return this._withLock(infoHash, async () => {
             const existing = this.items.get(infoHash);
+            if (!existing) {
+                await this.engine.remove(infoHash, deleteFiles);
+                return;
+            }
+            if (existing.fileOperation) throw new Error(ErrorCodes.FILE_OPERATION_BUSY);
             const wasActive = this._isActiveStatus(existing?.status);
             const wasQueued = existing?.status === 'queued';
             const hadQueuedMagnet = this.queuedMagnetUris.has(infoHash);
+            // O WebTorrent pode descartar o torrent antes de informar uma falha de exclusão.
+            // Guarde o catálogo e os metadados para permitir repetir mesmo após reiniciar.
+            const files = this.getFiles(infoHash);
+            const metadata = this.engine.getTorrentFile?.(infoHash);
+            if (metadata) this.confirmedMetadata.set(infoHash, metadata);
+            this.removingHashes.add(infoHash);
 
             // Remover da fila se estava lá
             const queueIdx = this.queue.indexOf(infoHash);
             if (queueIdx !== -1) this.queue.splice(queueIdx, 1);
+            this._clearMetadataTimer(infoHash);
 
-            // Limpar referências de magnet enfileirados
+            try {
+                // Magnets enfileirados podem nunca ter sido adicionados ao engine.
+                if (!(wasQueued && hadQueuedMagnet)) {
+                    await this.engine.remove(infoHash, deleteFiles);
+                }
+                // Também cobre sessões restauradas e tentativas após exclusão parcial.
+                if (deleteFiles) await this.torrentFiles.remove(existing.destinationFolder, files);
+                this.items.delete(infoHash);
+                this.persistSession();
+            } catch (removeErr) {
+                const failed: DownloadItem = {
+                    ...existing,
+                    status: 'error',
+                    errorMessage: ErrorCodes.OPERATION_FAILED,
+                    downloadSpeed: 0,
+                    uploadSpeed: 0,
+                };
+                this.items.set(infoHash, failed);
+                this.log.warn(
+                    '[DownloadManager] Falha ao remover do engine ou excluir arquivos:',
+                    infoHash.slice(0, 8),
+                    (removeErr as Error).message,
+                );
+                // Se a engine ainda existir, impeça que continue usando os dados parcialmente excluídos.
+                await this.engine.pause(infoHash).catch(() => {});
+                this._persistSessionAfterEngineError();
+                this.emit('update', failed);
+                throw removeErr;
+            } finally {
+                this.removingHashes.delete(infoHash);
+                this.seedingSet.delete(infoHash);
+                this._scheduleSeeds();
+                if (wasActive) this._processQueue();
+            }
+
             this.queuedMagnetUris.delete(infoHash);
             this.originalMagnetUris.delete(infoHash);
-
-            // Remover do mapa ANTES de chamar engine.remove para que
-            // o progress handler ignore eventos residuais imediatamente.
-            this._clearMetadataTimer(infoHash);
             this.selectedFileIndicesMap.delete(infoHash);
             this.confirmedMetadata.delete(infoHash);
             this.fileCatalog.delete(infoHash);
-            this.items.delete(infoHash);
+            this._metadataCache.delete(infoHash);
             this.emit('remove', infoHash);
-
-            // Se era um magnet enfileirado que nunca foi adicionado ao engine, não chamar engine.remove
-            if (!(wasQueued && hadQueuedMagnet)) {
-                try {
-                    await this.engine.remove(infoHash, deleteFiles);
-                } catch (removeErr) {
-                    this.log.warn(
-                        '[DownloadManager] Falha ao remover do engine:',
-                        infoHash.slice(0, 8),
-                        (removeErr as Error).message,
-                    );
-                }
-            }
-
-            this.seedingSet.delete(infoHash);
-            this._scheduleSeeds();
-            this.persistSession();
-            // Se um download ativo foi removido, processar a fila
-            if (wasActive) {
-                this._processQueue();
-            }
         });
     }
 

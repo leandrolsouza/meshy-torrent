@@ -99,6 +99,9 @@ test('configurações antigas/corrompidas usam modo desativado; cópias não alt
         set: (key, value) => {
             data.set(key, value);
         },
+        setMany: (values) => {
+            for (const [key, value] of Object.entries(values)) data.set(key, value);
+        },
     };
     const manager = createSettingsManager({ store, getDownloadsPath: () => '/downloads' });
     expect(manager.get().bandwidth).toEqual(createDefaultBandwidthSettings());

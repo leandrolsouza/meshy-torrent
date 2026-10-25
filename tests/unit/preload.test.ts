@@ -16,6 +16,15 @@ import '../../electron/preload';
 
 const api = (contextBridge.exposeInMainWorld as jest.Mock).mock.calls[0][1] as MeshyAPI;
 
+test.each([true, false])('transporta o estado de seed desejado enabled=%s', async (enabled) => {
+    jest.mocked(ipcRenderer.invoke).mockClear();
+    await api.setSeedingEnabled('a'.repeat(40), enabled);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('torrent:set-seeding-enabled', {
+        infoHash: 'a'.repeat(40),
+        enabled,
+    });
+});
+
 test('expõe somente a ponte específica, com comandos em canais fixos', async () => {
     expect(contextBridge.exposeInMainWorld).toHaveBeenCalledWith('meshy', api);
     for (const key of ['ipcRenderer', 'invoke', 'send', 'require', 'process'])

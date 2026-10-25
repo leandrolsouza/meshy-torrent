@@ -9,12 +9,21 @@
  */
 
 import { EventEmitter } from 'events';
+import { ipcMain } from 'electron';
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, rmdir } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { createDownloadManager } from '../../main/downloadManager';
+import { registerIpcHandlers } from '../../main/ipcHandler';
 import { createSettingsManager } from '../../main/settingsManager';
 import type { TorrentEngine, TorrentInfo, TorrentStatus } from '../../main/torrentEngine';
 import type { PersistedDownloadItem, PersistedStore } from '../../main/downloadManager';
 import type { SettingsStore } from '../../main/settingsManager';
-import type { TorrentMetadata } from '../../shared/types';
+import type { IPCResponse, TorrentFileInfo, TorrentMetadata } from '../../shared/types';
+import { ErrorCodes } from '../../shared/errorCodes';
+
+jest.mock('electron', () => ({ ipcMain: { handle: jest.fn() }, dialog: {} }));
+jest.mock('../../main/rendererSecurity', () => ({ isTrustedIpcSender: jest.fn(() => true) }));
 
 // ─── FS Mocks (hoisted by Jest) ───────────────────────────────────────────────
 
@@ -130,6 +139,9 @@ function makeMockSettingsStore(initialFolder = '/downloads'): SettingsStore {
     return {
         get: jest.fn().mockImplementation((key: string) => data.get(key)),
         set: jest.fn().mockImplementation((key: string, value: unknown) => data.set(key, value)),
+        setMany: jest.fn((values) => {
+            for (const [key, value] of Object.entries(values)) data.set(key, value);
+        }),
     };
 }
 
@@ -147,6 +159,204 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
     });
 
     // ── Requirement 7.1, 7.2: Full round-trip ────────────────────────────────
+
+    it.each(['engine', 'arquivos'])(
+        'preserva falha na remoção (%s) e permite excluir pelo IPC após restaurar sem torrent na engine',
+        async (failureAt) => {
+            const root = await mkdtemp(join(tmpdir(), 'meshy-removal-test-'));
+            if (!root.startsWith(join(tmpdir(), 'meshy-removal-test-')))
+                throw new Error('Alvo temporário inesperado');
+            try {
+                await writeFile(join(root, 'a.bin'), 'hello');
+                await writeFile(join(root, 'keep.txt'), 'keep');
+                if (failureAt === 'arquivos') await mkdir(join(root, 'b.bin'));
+                else await writeFile(join(root, 'b.bin'), 'other');
+                const hash = 'a'.repeat(40);
+                const metadata = Buffer.from('de');
+                const files: TorrentFileInfo[] = [0, 1].map((index) => ({
+                    index,
+                    name: index === 0 ? 'a.bin' : 'b.bin',
+                    path: index === 0 ? 'a.bin' : 'b.bin',
+                    length: 5,
+                    downloaded: 5,
+                    selected: index === 0,
+                }));
+                const settings = createSettingsManager({
+                    store: makeMockSettingsStore(root),
+                    getDownloadsPath: () => root,
+                });
+                const store = makeMockStore([
+                    {
+                        infoHash: hash,
+                        name: 'test',
+                        destinationFolder: root,
+                        totalSize: 5,
+                        downloadedSize: 5,
+                        progress: 1,
+                        status: 'paused',
+                        addedAt: 1,
+                        selectedFileIndices: [0],
+                    },
+                ]);
+                const engine = makeMockEngine();
+                let live = true;
+                jest.mocked(engine.getFiles).mockImplementation(() => {
+                    if (!live) throw new Error('Torrent ausente');
+                    return files;
+                });
+                jest.mocked(engine.getTorrentFile).mockImplementation(() =>
+                    live ? metadata : undefined,
+                );
+                jest.mocked(engine.remove).mockImplementationOnce(async () => {
+                    // O WebTorrent já descartou o torrent quando informa a falha.
+                    live = false;
+                    if (failureAt === 'engine') throw new Error('EACCES');
+                });
+                const manager = createDownloadManager(engine, settings, store, undefined, {
+                    disableCleanupTimer: true,
+                });
+                await manager.restoreSession();
+                registerIpcHandlers(manager, settings, engine);
+                const remove = jest
+                    .mocked(ipcMain.handle)
+                    .mock.calls.find(([channel]) => channel === 'torrent:remove')![1];
+                expect(
+                    await remove({} as Electron.IpcMainInvokeEvent, {
+                        infoHash: hash,
+                        deleteFiles: true,
+                    }),
+                ).toEqual({ success: false, error: ErrorCodes.OPERATION_FAILED });
+                expect(manager.getAll()[0]).toMatchObject({ infoHash: hash, status: 'error' });
+                expect(store.get('downloads')?.[0]).toMatchObject({
+                    infoHash: hash,
+                    status: 'error',
+                    errorMessage: ErrorCodes.OPERATION_FAILED,
+                    files,
+                    selectedFileIndices: [0],
+                    torrentFileBase64: metadata.toString('base64'),
+                });
+                if (failureAt === 'arquivos') {
+                    expect(await readdir(root)).toEqual(['b.bin', 'keep.txt']);
+                    await rmdir(join(root, 'b.bin'));
+                    await writeFile(join(root, 'b.bin'), 'other');
+                }
+
+                const restoredEngine = makeMockEngine();
+                const restored = createDownloadManager(restoredEngine, settings, store, undefined, {
+                    disableCleanupTimer: true,
+                });
+                await restored.restoreSession();
+                expect(restoredEngine.addTorrentBuffer).not.toHaveBeenCalled();
+                expect(restored.getFiles(hash)).toEqual(files);
+                jest.mocked(ipcMain.handle).mockClear();
+                registerIpcHandlers(restored, settings, restoredEngine);
+                const retry = jest
+                    .mocked(ipcMain.handle)
+                    .mock.calls.find(([channel]) => channel === 'torrent:remove')![1];
+
+                expect(
+                    await retry({} as Electron.IpcMainInvokeEvent, {
+                        infoHash: hash,
+                        deleteFiles: true,
+                    }),
+                ).toEqual({ success: true, data: undefined });
+                expect(await readdir(root)).toEqual(['keep.txt']);
+                expect(await readFile(join(root, 'keep.txt'), 'utf8')).toBe('keep');
+                expect(restored.getAll()).toEqual([]);
+                expect(store.get('downloads')).toEqual([]);
+            } finally {
+                await rm(root, { recursive: true, force: true });
+            }
+        },
+    );
+
+    it('persiste a seleção alterada via IPC antes de responder e a reaplica após reiniciar', async () => {
+        const hash = 'a'.repeat(40);
+        const metadata = Buffer.from('de');
+        const files: TorrentFileInfo[] = [
+            { index: 0, name: 'a.bin', path: 'a.bin', length: 100, downloaded: 50, selected: true },
+            {
+                index: 1,
+                name: 'b.bin',
+                path: 'b.bin',
+                length: 300,
+                downloaded: 60,
+                selected: false,
+            },
+        ];
+        const settings = createSettingsManager({
+            store: makeMockSettingsStore(),
+            getDownloadsPath: () => '/downloads',
+        });
+        const store = makeMockStore([
+            {
+                infoHash: hash,
+                name: 'test',
+                totalSize: 100,
+                downloadedSize: 50,
+                progress: 0.5,
+                status: 'downloading',
+                destinationFolder: '/downloads',
+                addedAt: 1,
+                selectedFileIndices: [0],
+                torrentFileBase64: metadata.toString('base64'),
+            },
+        ]);
+        const engine = makeMockEngine();
+        let currentFiles = files.map((file) => ({ ...file }));
+        jest.mocked(engine.getFiles).mockImplementation(() => currentFiles);
+        jest.mocked(engine.setFileSelection).mockImplementation((_hash, indices) => {
+            currentFiles = currentFiles.map((file) => ({
+                ...file,
+                selected: indices.includes(file.index),
+            }));
+            return currentFiles;
+        });
+        const manager = createDownloadManager(engine, settings, store, undefined, {
+            disableCleanupTimer: true,
+        });
+        await manager.restoreSession();
+        registerIpcHandlers(manager, settings, engine);
+        const handler = jest
+            .mocked(ipcMain.handle)
+            .mock.calls.find(([channel]) => channel === 'torrent:set-file-selection')![1];
+
+        const response = (await handler({} as Electron.IpcMainInvokeEvent, {
+            infoHash: hash,
+            selectedIndices: [1],
+        })) as IPCResponse<TorrentFileInfo[]>;
+
+        expect(response).toEqual({ success: true, data: currentFiles });
+        expect(manager.getAll()[0]).toMatchObject({
+            totalSize: 300,
+            downloadedSize: 60,
+            progress: 0.2,
+            selectedFileCount: 1,
+        });
+        // Sem persistSession adicional: o comando precisa confirmar uma seleção já salva.
+        expect(store.get('downloads')?.[0]).toMatchObject({
+            selectedFileIndices: [1],
+            totalSize: 300,
+            downloadedSize: 60,
+            progress: 0.2,
+        });
+
+        const restoredEngine = makeMockEngine();
+        const selectedFiles = files.map((file) => ({ ...file, selected: file.index === 1 }));
+        jest.mocked(restoredEngine.getFiles).mockReturnValue(selectedFiles);
+        jest.mocked(restoredEngine.setFileSelection).mockReturnValue(selectedFiles);
+        const restoredManager = createDownloadManager(restoredEngine, settings, store, undefined, {
+            disableCleanupTimer: true,
+        });
+        await restoredManager.restoreSession();
+
+        expect(restoredEngine.addTorrentBuffer).toHaveBeenCalledWith(metadata, false, {
+            destinationFolder: '/downloads',
+            selectedFileIndices: [1],
+        });
+        expect(restoredEngine.setFileSelection).toHaveBeenCalledWith(hash, [1]);
+        expect(restoredManager.getFiles(hash).map((file) => file.selected)).toEqual([false, true]);
+    });
 
     it.each(['downloading', 'paused', 'queued'] as const)(
         'restaura metadados salvos sem magnet ou caminho .torrent no estado %s',

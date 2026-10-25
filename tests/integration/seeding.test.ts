@@ -25,6 +25,9 @@ function setup(saved: PersistedDownloadItem[] = []) {
             set: (key, value) => {
                 data.set(key, value);
             },
+            setMany: (values) => {
+                for (const [key, value] of Object.entries(values)) data.set(key, value);
+            },
         } as SettingsStore,
         getDownloadsPath: () => '/downloads',
     });
@@ -85,22 +88,72 @@ function setup(saved: PersistedDownloadItem[] = []) {
         engine.emit('done', hash(n));
         await manager.applySeedingSettings();
     };
-    return { engine, manager, settings, status, finish, saved: () => persisted };
+    return { engine, manager, settings, store, status, finish, saved: () => persisted };
 }
 
 beforeEach(() => {
     jest.mocked(existsSync).mockReturnValue(true);
 });
 
+test.each([true, false])(
+    'repete o estado desejado enabled=%s após falha de persistência sem inverter',
+    async (enabled) => {
+        const { manager, finish, status, saved, store, engine } = setup();
+        await finish(1);
+        await manager.setSeedingEnabled(hash(1), !enabled);
+        const previous = saved().find((item) => item.infoHash === hash(1))!;
+        jest.spyOn(store, 'set').mockImplementationOnce(() => {
+            throw new Error('Falha de gravação');
+        });
+
+        await expect(manager.setSeedingEnabled(hash(1), enabled)).rejects.toThrow(
+            'Falha de gravação',
+        );
+        expect(status(1).seedingDisabled).toBe(!enabled);
+        expect(saved().find((item) => item.infoHash === hash(1))).toEqual(previous);
+
+        await manager.setSeedingEnabled(hash(1), enabled);
+        expect(status(1)).toMatchObject({
+            status: enabled ? 'seeding' : 'completed',
+            seedingDisabled: !enabled,
+        });
+        expect(saved().find((item) => item.infoHash === hash(1))?.seedingDisabled).toBe(!enabled);
+        const pauses = engine.pause.mock.calls.length;
+        const resumes = engine.resume.mock.calls.length;
+        await manager.setSeedingEnabled(hash(1), enabled);
+        expect(status(1).seedingDisabled).toBe(!enabled);
+        expect(engine.pause).toHaveBeenCalledTimes(pauses);
+        expect(engine.resume).toHaveBeenCalledTimes(resumes);
+    },
+);
+
+test.each([true, false])(
+    'solicitações concorrentes com enabled=%s mantêm o estado desejado',
+    async (enabled) => {
+        const { manager, finish, status, saved } = setup();
+        await finish(1);
+        await manager.setSeedingEnabled(hash(1), !enabled);
+        await Promise.all([
+            manager.setSeedingEnabled(hash(1), enabled),
+            manager.setSeedingEnabled(hash(1), enabled),
+        ]);
+        expect(status(1)).toMatchObject({
+            status: enabled ? 'seeding' : 'completed',
+            seedingDisabled: !enabled,
+        });
+        expect(saved().find((item) => item.infoHash === hash(1))?.seedingDisabled).toBe(!enabled);
+    },
+);
+
 test('ciclo completo: add → done → seeding → stop → completed → resume → seeding', async () => {
     const { manager, engine, status, finish, saved } = setup();
     await finish(1);
     expect(status(1).status).toBe('seeding');
     expect(engine.pause).not.toHaveBeenCalled();
-    expect((await manager.toggleSeed(hash(1))).status).toBe('completed');
+    expect((await manager.setSeedingEnabled(hash(1), false)).status).toBe('completed');
     expect(saved()[0].seedingDisabled).toBe(true);
     expect(engine.pause).toHaveBeenCalledWith(hash(1));
-    expect((await manager.toggleSeed(hash(1))).status).toBe('seeding');
+    expect((await manager.setSeedingEnabled(hash(1), true)).status).toBe('seeding');
     expect(engine.resume).toHaveBeenCalledWith(hash(1), true);
 });
 
@@ -135,15 +188,15 @@ test('reduzir limite suspende os últimos iniciados e aumentar preenche a fila',
     expect(manager.getAll().filter((item) => item.status === 'seeding')).toHaveLength(3);
 });
 
-test('desativar globalmente para a rede; toggle persiste preferência sem iniciar seed', async () => {
+test('desativar globalmente para a rede; preferência individual é salva sem iniciar seed', async () => {
     const { manager, settings, finish, status, engine } = setup();
     await finish(1);
     await finish(2);
     settings.set({ seedingEnabled: false });
     await manager.applySeedingSettings();
     expect(manager.getAll().every((item) => item.status === 'completed')).toBe(true);
-    await manager.toggleSeed(hash(1));
-    await manager.toggleSeed(hash(1));
+    await manager.setSeedingEnabled(hash(1), false);
+    await manager.setSeedingEnabled(hash(1), true);
     expect(status(1).status).toBe('completed');
     expect(engine.resume).not.toHaveBeenCalled();
     settings.set({ seedingEnabled: true });
@@ -201,7 +254,7 @@ test('operações concorrentes não excedem o limite nem promovem duas vezes', a
     await finish(2);
     await finish(3);
     await Promise.all([
-        manager.toggleSeed(hash(1)),
+        manager.setSeedingEnabled(hash(1), false),
         manager.applySeedingSettings(),
         manager.applySeedingSettings(),
     ]);
@@ -224,7 +277,7 @@ test('falha ao parar preserva o seeder e seu slot', async () => {
     const { manager, finish, engine, status } = setup();
     await finish(1);
     engine.pause.mockRejectedValueOnce(new Error('timeout'));
-    await expect(manager.toggleSeed(hash(1))).rejects.toThrow('timeout');
+    await expect(manager.setSeedingEnabled(hash(1), false)).rejects.toThrow('timeout');
     expect(status(1).status).toBe('seeding');
     expect(status(1).seedingDisabled).not.toBe(true);
 });

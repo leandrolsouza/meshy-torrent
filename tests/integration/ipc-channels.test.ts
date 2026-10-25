@@ -66,7 +66,7 @@ const EXPECTED_CHANNELS = [
     'torrent:add-file',
     'torrent:add-file-buffer',
     'torrent:add-magnet',
-    'torrent:toggle-seed',
+    'torrent:set-seeding-enabled',
     'torrent:pause',
     'torrent:resume',
     'torrent:remove',
@@ -121,7 +121,7 @@ function makeMockDownloadManager(): DownloadManager {
         addTorrentFile: jest.fn().mockResolvedValue(item),
         addTorrentBuffer: jest.fn().mockResolvedValue(item),
         addMagnetLink: jest.fn().mockResolvedValue(item),
-        toggleSeed: jest.fn().mockResolvedValue(item),
+        setSeedingEnabled: jest.fn().mockResolvedValue(item),
         applySeedingSettings: jest.fn().mockResolvedValue(undefined),
         pause: jest.fn().mockResolvedValue(undefined),
         resume: jest.fn().mockResolvedValue(undefined),
@@ -333,20 +333,33 @@ describe('Integration: IPC Channels (Requirements 8.1, 8.5)', () => {
     // ── Valid payloads: verify interaction with managers ──────────────────────
 
     describe('Valid payloads: handlers delegate to correct managers', () => {
-        it('toggle-seed valida o hash e retorna o item confirmado', async () => {
-            const handler = getHandler('torrent:toggle-seed')!;
-            const infoHash = makeSampleDownloadItem().infoHash;
-            expect(await handler({}, { infoHash: '../invalid' })).toEqual({
-                success: false,
-                error: ErrorCodes.INVALID_PARAMS,
-            });
-            expect(downloadManager.toggleSeed).not.toHaveBeenCalled();
-            expect(await handler({}, { infoHash })).toEqual({
-                success: true,
-                data: expect.objectContaining({ infoHash }),
-            });
-            expect(downloadManager.toggleSeed).toHaveBeenCalledWith(infoHash);
-        });
+        it.each([true, false])(
+            'set-seeding-enabled valida o hash e confirma enabled=%s',
+            async (enabled) => {
+                const handler = getHandler('torrent:set-seeding-enabled')!;
+                const infoHash = makeSampleDownloadItem().infoHash;
+                expect(await handler({}, { infoHash: '../invalid' })).toEqual({
+                    success: false,
+                    error: ErrorCodes.INVALID_PARAMS,
+                });
+                expect(downloadManager.setSeedingEnabled).not.toHaveBeenCalled();
+                expect(await handler({}, { infoHash, enabled })).toEqual({
+                    success: true,
+                    data: expect.objectContaining({ infoHash }),
+                });
+                expect(downloadManager.setSeedingEnabled).toHaveBeenCalledWith(infoHash, enabled);
+            },
+        );
+        it.each([undefined, null, 0, 1, 'false', [], {}])(
+            'rejeita estado de seed inválido: %j',
+            async (enabled) => {
+                const handler = getHandler('torrent:set-seeding-enabled')!;
+                expect(
+                    await handler({}, { infoHash: makeSampleDownloadItem().infoHash, enabled }),
+                ).toEqual({ success: false, error: ErrorCodes.INVALID_PARAMS });
+                expect(downloadManager.setSeedingEnabled).not.toHaveBeenCalled();
+            },
+        );
         it('settings:set aplica os slots e rejeita limites inválidos', async () => {
             const handler = getHandler('settings:set')!;
             expect(await handler({}, { maxConcurrentSeeders: 0 })).toEqual({

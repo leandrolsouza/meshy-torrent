@@ -15,7 +15,7 @@ export type { AppSettings } from '../shared/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PersistedSettings {
+type PersistedSettings = {
     seedingEnabled: boolean;
     maxConcurrentSeeders: number;
     bandwidth?: AppSettings['bandwidth'];
@@ -34,7 +34,7 @@ interface PersistedSettings {
     pexEnabled: boolean; // PEX — Peer Exchange (padrão: true)
     utpEnabled: boolean; // uTP — Micro Transport Protocol (padrão: true)
     schemaVersion: number; // para migrações futuras
-}
+};
 
 export interface SettingsManager {
     get(): AppSettings;
@@ -54,6 +54,8 @@ export interface SettingsManager {
 export interface SettingsStore {
     get<K extends keyof PersistedSettings>(key: K): PersistedSettings[K];
     set<K extends keyof PersistedSettings>(key: K, value: PersistedSettings[K]): void;
+    /** Confirma o conjunto em uma única gravação, preservando as demais chaves. */
+    setMany(values: Partial<AppSettings>): void;
 }
 
 // ─── Factory options ──────────────────────────────────────────────────────────
@@ -99,6 +101,9 @@ const SCHEMA_VERSION = 1;
  *   store: {
  *     get: (key) => fakeStore.get(key) as any,
  *     set: (key, value) => fakeStore.set(key, value),
+ *     setMany: (values) => {
+ *       for (const [key, value] of Object.entries(values)) fakeStore.set(key, value);
+ *     },
  *   },
  *   getDownloadsPath: () => '/home/user/Downloads',
  * });
@@ -177,13 +182,14 @@ export function createSettingsManager(options: CreateSettingsManagerOptions = {}
                 'bandwidth',
             ];
 
+            const updates: Partial<AppSettings> = {};
             for (const key of settableKeys) {
                 if (partial[key] !== undefined) {
-                    // O cast é seguro: cada chave de AppSettings mapeia para o tipo
-                    // correspondente em PersistedSettings.
-                    store.set(key as keyof PersistedSettings, partial[key] as never);
+                    // Chave e valor vêm do mesmo campo de AppSettings.
+                    updates[key] = partial[key] as never;
                 }
             }
+            if (Object.keys(updates).length > 0) store.setMany(updates);
         },
 
         getDefaultDownloadFolder(): string {
@@ -352,6 +358,9 @@ function createElectronStore(): SettingsStore {
         },
         set<K extends keyof PersistedSettings>(key: K, value: PersistedSettings[K]): void {
             store.set(key, value);
+        },
+        setMany(values: Partial<AppSettings>): void {
+            store.set(values);
         },
     };
 }
