@@ -865,6 +865,163 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
 
 // ─── TorrentMetadata round-trip ───────────────────────────────────────────────
 
+describe('Integração: recuperação de sessão parcialmente corrompida', () => {
+    const first: PersistedDownloadItem = {
+        infoHash: 'a'.repeat(40),
+        name: 'Primeiro download',
+        totalSize: 100,
+        downloadedSize: 50,
+        progress: 0.5,
+        status: 'paused',
+        destinationFolder: '/downloads',
+        addedAt: 1,
+        selectedFileIndices: [0],
+    };
+    const last: PersistedDownloadItem = {
+        ...first,
+        infoHash: 'b'.repeat(40),
+        name: 'Último download',
+        status: 'queued',
+        magnetUri: `magnet:?xt=urn:btih:${'b'.repeat(40)}`,
+    };
+
+    function setup(downloads: unknown) {
+        const data = new Map<string, unknown>([
+            ['downloads', downloads],
+            ['downloadsSchemaVersion', 1],
+        ]);
+        const store: PersistedStore = {
+            get: jest.fn().mockImplementation((key: string) => data.get(key)),
+            set: jest.fn((key: string, value: unknown) => data.set(key, value)),
+        };
+        const settings = createSettingsManager({
+            store: makeMockSettingsStore('/downloads'),
+            getDownloadsPath: () => '/downloads',
+        });
+        const engine = makeMockEngine();
+        const manager = createDownloadManager(engine, settings, store, undefined, {
+            disableCleanupTimer: true,
+        });
+        return { manager, store, data, engine };
+    }
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockExistsSync.mockReturnValue(true);
+        mockAccessSync.mockReturnValue(undefined);
+    });
+
+    it.each([
+        null,
+        undefined,
+        false,
+        42,
+        'corrompido',
+        [],
+        {},
+        { ...first, name: null },
+        { ...first, destinationFolder: null },
+        { ...first, totalSize: '100' },
+        { ...first, progress: 2 },
+        { ...first, addedAt: null },
+        { ...first, selectedFileIndices: {} },
+        { ...first, selectedFileIndices: [null] },
+        { ...first, completedAt: 'ontem' },
+        { ...first, creator: {} },
+        { ...first, torrentFileBase64: 'inválido' },
+    ])('ignora entrada inválida (%j) e preserva os downloads válidos ao redor', async (invalid) => {
+        const { manager, store, engine } = setup([first, invalid, last]);
+        await expect(manager.restoreSession()).resolves.toBeUndefined();
+        expect(manager.getAll().map((item) => item.infoHash)).toEqual([
+            first.infoHash,
+            last.infoHash,
+        ]);
+        expect(manager.getQueueOrder()).toEqual([last.infoHash]);
+        manager.persistSession();
+        expect(store.get('downloads')).toEqual([
+            expect.objectContaining(first),
+            expect.objectContaining(last),
+        ]);
+
+        // O próximo processo recebe a sessão recuperada com seleção e fila intactas.
+        const recovered = setup(store.get('downloads'));
+        await recovered.manager.restoreSession();
+        expect(recovered.manager.getAll().map((item) => item.infoHash)).toEqual([
+            first.infoHash,
+            last.infoHash,
+        ]);
+        expect(recovered.manager.getQueueOrder()).toEqual([last.infoHash]);
+        expect(engine.addMagnetLink).not.toHaveBeenCalled();
+    });
+
+    it.each([null, {}, 'corrompido', 42])(
+        'preserva a sessão original quando downloads não é uma lista (%j)',
+        async (original) => {
+            const { manager, store, data } = setup(original);
+            await expect(manager.restoreSession()).rejects.toThrow('sessão de downloads inválido');
+            manager.persistSession();
+            await manager.applySeedingSettings();
+            expect(store.set).not.toHaveBeenCalled();
+            expect(data.get('downloads')).toEqual(original);
+            expect(data.get('downloadsSchemaVersion')).toBe(1);
+        },
+    );
+
+    it('não sobrescreve a sessão após falha de leitura do armazenamento', async () => {
+        const original = [first, last];
+        const { manager, store, data } = setup(original);
+        jest.mocked(store.get).mockImplementation(() => {
+            throw new Error('Falha de leitura');
+        });
+        await expect(manager.restoreSession()).rejects.toThrow('Falha de leitura');
+        manager.persistSession();
+        expect(store.set).not.toHaveBeenCalled();
+        expect(data.get('downloads')).toEqual(original);
+    });
+
+    it('não grava um snapshot parcial se a restauração for interrompida entre itens', async () => {
+        const original = [first, last];
+        const { manager, store, data } = setup(original);
+        manager.on('update', (item) => {
+            if (item.infoHash === last.infoHash) throw new Error('Restauração interrompida');
+        });
+        await expect(manager.restoreSession()).rejects.toThrow('Restauração interrompida');
+        manager.persistSession();
+        await manager.applySeedingSettings();
+        expect(store.set).not.toHaveBeenCalled();
+        expect(data.get('downloads')).toEqual(original);
+    });
+
+    it('aguarda todos os itens antes de permitir persistência durante retomada assíncrona', async () => {
+        const active: PersistedDownloadItem = {
+            ...first,
+            status: 'downloading',
+            magnetUri: `magnet:?xt=urn:btih:${first.infoHash}`,
+        };
+        const original = [active, last];
+        const { manager, store, data, engine } = setup(original);
+        let finish!: (info: TorrentInfo) => void;
+        jest.mocked(engine.addMagnetLink).mockReturnValueOnce(
+            new Promise((resolve) => {
+                finish = resolve;
+            }),
+        );
+        const restoration = manager.restoreSession();
+        await Promise.resolve();
+        expect(engine.addMagnetLink).toHaveBeenCalled();
+        manager.persistSession();
+        expect(store.set).not.toHaveBeenCalled();
+        expect(data.get('downloads')).toEqual(original);
+
+        finish(makeTorrentInfo({ infoHash: first.infoHash }));
+        await restoration;
+        expect(store.get('downloads')).toEqual([
+            expect.objectContaining({ infoHash: first.infoHash }),
+            expect.objectContaining({ infoHash: last.infoHash }),
+        ]);
+    });
+});
+
 describe('Integration: TorrentMetadata persisted and restored for completed torrents', () => {
     beforeEach(() => {
         jest.clearAllMocks();

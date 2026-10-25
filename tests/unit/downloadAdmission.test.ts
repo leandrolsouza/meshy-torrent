@@ -6,6 +6,8 @@ import type { SettingsManager } from '../../main/settingsManager';
 import type { PreparedTorrent } from '../../main/torrentPreparation';
 import type { TorrentFileInfo, PersistedDownloadItem } from '../../shared/types';
 import { createDiskSpaceService } from '../../main/diskSpace';
+import type { VolumeSpace } from '../../main/diskSpace';
+import { join } from 'path';
 
 const folder = process.cwd();
 const draft = (hash = 'a'.repeat(40), length = 600): PreparedTorrent => ({
@@ -28,7 +30,12 @@ const draft = (hash = 'a'.repeat(40), length = 600): PreparedTorrent => ({
         ],
     },
 });
-function setup(free = 1000, max = 3, persisted?: PersistedDownloadItem[]) {
+function setup(
+    free = 1000,
+    max = 3,
+    persisted?: PersistedDownloadItem[],
+    readVolume?: (folder: string) => Promise<VolumeSpace>,
+) {
     let freeBytes = free;
     const files = new Map<string, TorrentFileInfo[]>();
     let adds = 0;
@@ -81,7 +88,7 @@ function setup(free = 1000, max = 3, persisted?: PersistedDownloadItem[]) {
     };
     const diskSpace = createDiskSpaceService({
         safetyMarginBytes: 0,
-        readVolume: async () => ({ volumeId: 'A', freeBytes }),
+        readVolume: readVolume ?? (async () => ({ volumeId: 'A', freeBytes })),
     });
     const manager = createDownloadManager(
         engine as unknown as TorrentEngine,
@@ -220,4 +227,66 @@ test('retomada após reiniciar preserva metadados, pasta e seleção da confirma
         selectedFileCount: 1,
         totalFileCount: 2,
     });
+});
+
+describe('isolamento de falhas entre volumes', () => {
+    const otherFolder = join(folder, 'main');
+    function readVolumes() {
+        let disconnected = false;
+        return {
+            disconnect: () => {
+                disconnected = true;
+            },
+            readVolume: async (destination: string) => {
+                if (destination === otherFolder && disconnected) throw new Error('ENODEV');
+                return { volumeId: destination === otherFolder ? 'B' : 'A', freeBytes: 1000 };
+            },
+        };
+    }
+
+    test('permite confirmar um download saudável quando outro volume está indisponível', async () => {
+        const volumes = readVolumes();
+        const { manager, engine } = setup(1000, 3, undefined, volumes.readVolume);
+        await manager.addPreparedTorrent(draft(), otherFolder, [0]);
+        volumes.disconnect();
+        await expect(
+            manager.addPreparedTorrent(draft('b'.repeat(40)), folder, [0]),
+        ).resolves.toMatchObject({ status: 'downloading', destinationFolder: folder });
+        expect(engine.resume).toHaveBeenCalledTimes(2);
+    });
+
+    test.each([1, 3])(
+        'a verificação periódica preserva a transferência saudável (limite=%s)',
+        async (max) => {
+            const volumes = readVolumes();
+            const { manager, engine } = setup(1000, max, undefined, volumes.readVolume);
+            const healthy = await manager.addPreparedTorrent(draft(), folder, [0]);
+            const unavailable = await manager.addPreparedTorrent(
+                draft('b'.repeat(40)),
+                otherFolder,
+                [0],
+            );
+            volumes.disconnect();
+            await manager.checkDiskSpace();
+            expect(
+                manager.getAll().find((item) => item.infoHash === healthy.infoHash),
+            ).toMatchObject({ status: 'downloading' });
+            expect(engine.pause).not.toHaveBeenCalledWith(healthy.infoHash);
+            if (max === 3) {
+                expect(
+                    manager.getAll().find((item) => item.infoHash === unavailable.infoHash),
+                ).toMatchObject({
+                    status: 'paused',
+                    pauseReason: 'disk-space',
+                    errorMessage: 'error.destination.diskSpaceUnavailable',
+                });
+                expect(engine.pause).toHaveBeenCalledWith(unavailable.infoHash);
+            } else {
+                expect(manager.getQueueOrder()).toEqual([unavailable.infoHash]);
+            }
+            await expect(manager.resume(unavailable.infoHash)).rejects.toThrow(
+                'diskSpaceUnavailable',
+            );
+        },
+    );
 });

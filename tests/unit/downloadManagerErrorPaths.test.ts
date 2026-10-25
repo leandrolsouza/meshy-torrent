@@ -24,7 +24,7 @@ import { existsSync, accessSync } from 'fs';
 import { createDownloadManager } from '../../main/downloadManager';
 import type { TorrentEngine, TorrentInfo, TorrentStatus } from '../../main/torrentEngine';
 import type { SettingsManager } from '../../main/settingsManager';
-import type { DownloadItem } from '../../main/downloadManager';
+import type { DownloadItem, PersistedStore } from '../../main/downloadManager';
 import type { Logger } from '../../main/logger';
 
 const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
@@ -127,6 +127,122 @@ function makeMockLogger(): Logger {
         debug: jest.fn(),
     };
 }
+
+describe('DownloadManager — persistência durante erros da engine', () => {
+    const secondHash = 'b'.repeat(40);
+    const thirdHash = 'c'.repeat(40);
+
+    async function setup(withDiskSpace = false) {
+        const data = new Map<string, unknown>();
+        const store: PersistedStore = {
+            get: jest.fn().mockImplementation((key: string) => data.get(key)),
+            set: jest.fn((key: string, value: unknown) => data.set(key, value)),
+        };
+        const engine = makeMockEngine();
+        jest.mocked(engine.addMagnetLink).mockImplementation(async (magnetUri) =>
+            makeTorrentInfo({
+                infoHash: magnetUri.match(/btih:([a-f0-9]{40})/)![1]!,
+                status: 'downloading',
+            }),
+        );
+        const settings = makeMockSettings();
+        jest.mocked(settings.get).mockReturnValue({
+            ...settings.get(),
+            maxConcurrentDownloads: 1,
+        });
+        const log = makeMockLogger();
+        const manager = createDownloadManager(engine, settings, store, log, {
+            disableCleanupTimer: true,
+            ...(withDiskSpace
+                ? {
+                      diskSpace: {
+                          inspect: jest.fn().mockResolvedValue({
+                              freeBytes: 10 ** 12,
+                              selectedBytes: 0,
+                              reservedBytes: 0,
+                              safetyMarginBytes: 0,
+                              sufficient: true,
+                          }),
+                      },
+                  }
+                : {}),
+        });
+        await manager.addMagnetLink(VALID_MAGNET);
+        await manager.addMagnetLink(`magnet:?xt=urn:btih:${secondHash}`);
+        await manager.addMagnetLink(`magnet:?xt=urn:btih:${thirdHash}`);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        manager.persistSession();
+        const original = data.get('downloads');
+        const storageError = Object.assign(new Error('ENOSPC: session write'), { code: 'ENOSPC' });
+        jest.mocked(store.set).mockImplementation(() => {
+            throw storageError;
+        });
+        return { manager, engine, store, log, data, original, storageError };
+    }
+
+    beforeEach(() => {
+        mockExistsSync.mockReturnValue(true);
+        mockAccessSync.mockReturnValue(undefined);
+    });
+
+    describe.each([
+        { label: 'erro de rede', error: new Error('Falha de rede'), status: 'error' },
+        {
+            label: 'ENOSPC por código',
+            error: Object.assign(new Error('Disco cheio'), { code: 'ENOSPC' }),
+            status: 'paused',
+        },
+        { label: 'ENOSPC na mensagem', error: new Error('write ENOSPC'), status: 'paused' },
+    ])('$label', ({ error, status }) => {
+        it.each([false, true])(
+            'continua a fila e encaminha o erro mesmo sem conseguir salvar (disco=%s)',
+            async (withDiskSpace) => {
+                const { manager, engine, log, data, original } = await setup(withDiskSpace);
+                const forwardError = jest.fn();
+                engine.on('error', forwardError);
+                expect(() => engine.emit('error', INFO_HASH, error)).not.toThrow();
+                await new Promise<void>((resolve) => setImmediate(resolve));
+
+                expect(forwardError).toHaveBeenCalledWith(INFO_HASH, error);
+                expect(manager.getAll().find((item) => item.infoHash === INFO_HASH)).toMatchObject({
+                    status,
+                    ...(status === 'paused' ? { pauseReason: 'disk-space' } : {}),
+                });
+                expect(manager.getAll().find((item) => item.infoHash === secondHash)?.status).toBe(
+                    'downloading',
+                );
+                expect(manager.getQueueOrder()).toEqual([thirdHash]);
+                expect(engine.addMagnetLink).toHaveBeenCalledTimes(2);
+                if (status === 'paused') expect(engine.pause).toHaveBeenCalledWith(INFO_HASH);
+                expect(log.warn).toHaveBeenCalledWith(
+                    '[DownloadManager] Falha ao persistir sessão após erro da engine:',
+                    'ENOSPC',
+                );
+                expect(data.get('downloads')).toEqual(original);
+            },
+        );
+    });
+
+    it('mantém a falha explícita de persistSession para consumidores que exigem gravação', async () => {
+        const { manager, storageError } = await setup();
+        expect(() => manager.persistSession()).toThrow(storageError);
+    });
+
+    it('permite salvar o estado atualizado quando o armazenamento volta a funcionar', async () => {
+        const { manager, engine, store, data } = await setup();
+        expect(() => engine.emit('error', INFO_HASH, new Error('Falha de rede'))).not.toThrow();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        jest.mocked(store.set).mockImplementation((key, value) => {
+            data.set(key, value);
+        });
+        manager.persistSession();
+        expect(store.get('downloads')).toEqual([
+            expect.objectContaining({ infoHash: INFO_HASH, status: 'error' }),
+            expect.objectContaining({ infoHash: secondHash, status: 'downloading' }),
+            expect.objectContaining({ infoHash: thirdHash, status: 'queued' }),
+        ]);
+    });
+});
 
 // ─── _startMetadataTimer — bloco catch interno (Requisitos 6.5, 6.6) ─────────
 

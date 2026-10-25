@@ -21,11 +21,13 @@ export interface PersistedStore {
 }
 
 export interface DownloadSessionRepository {
-    read(): PersistedDownloadItem[];
+    read(): unknown[];
     write(items: PersistedDownloadItem[], queueOrder: readonly string[]): void;
 }
 
 export type PersistedDownloadValidationReason =
+    | 'shape'
+    | 'fields'
     | 'info-hash'
     | 'status'
     | 'magnet-uri'
@@ -36,6 +38,7 @@ export type PersistedDownloadValidationReason =
 export type PersistedDownloadValidation =
     | {
           valid: true;
+          item: PersistedDownloadItem;
           metadata?: Buffer;
           files?: TorrentFileInfo[];
       }
@@ -54,12 +57,53 @@ const VALID_PERSISTED_STATUSES: TorrentStatus[] = [
 ];
 
 /** Valida campos que pertencem ao formato salvo, sem iniciar operações do engine. */
-export function validatePersistedDownloadItem(
-    item: PersistedDownloadItem,
-): PersistedDownloadValidation {
+export function validatePersistedDownloadItem(value: unknown): PersistedDownloadValidation {
+    if (typeof value !== 'object' || value === null || Array.isArray(value))
+        return { valid: false, reason: 'shape' };
+    const item = value as PersistedDownloadItem;
     if (typeof item.infoHash !== 'string' || item.infoHash.length !== 40)
         return { valid: false, reason: 'info-hash' };
     if (!VALID_PERSISTED_STATUSES.includes(item.status)) return { valid: false, reason: 'status' };
+    if (
+        typeof item.name !== 'string' ||
+        typeof item.destinationFolder !== 'string' ||
+        item.destinationFolder.length === 0 ||
+        item.destinationFolder.includes('\0') ||
+        ![item.totalSize, item.downloadedSize, item.addedAt, item.progress].every(
+            (number) => typeof number === 'number' && Number.isFinite(number) && number >= 0,
+        ) ||
+        item.progress > 1 ||
+        (item.selectedFileIndices !== undefined &&
+            (!Array.isArray(item.selectedFileIndices) ||
+                !item.selectedFileIndices.every(
+                    (index) => Number.isSafeInteger(index) && index >= 0,
+                )))
+    )
+        return { valid: false, reason: 'fields' };
+    for (const key of [
+        'completedAt',
+        'elapsedMs',
+        'selectedFileCount',
+        'totalFileCount',
+    ] as const) {
+        const number = item[key];
+        if (
+            number !== undefined &&
+            (typeof number !== 'number' || !Number.isFinite(number) || number < 0)
+        )
+            return { valid: false, reason: 'fields' };
+    }
+    if (
+        (item.seedingDisabled !== undefined && typeof item.seedingDisabled !== 'boolean') ||
+        (item.errorMessage !== undefined && typeof item.errorMessage !== 'string') ||
+        [item.creator, item.comment].some(
+            (text) => text !== undefined && text !== null && typeof text !== 'string',
+        ) ||
+        (item.creationDate !== undefined &&
+            item.creationDate !== null &&
+            (typeof item.creationDate !== 'number' || !Number.isFinite(item.creationDate)))
+    )
+        return { valid: false, reason: 'fields' };
     if (
         item.magnetUri !== undefined &&
         (typeof item.magnetUri !== 'string' || !item.magnetUri.startsWith('magnet:'))
@@ -107,6 +151,7 @@ export function validatePersistedDownloadItem(
 
     return {
         valid: true,
+        item,
         ...(metadata ? { metadata } : {}),
         ...(files ? { files } : {}),
     };
@@ -172,7 +217,7 @@ export function createDownloadSessionRepository(
     log: Logger,
 ): DownloadSessionRepository {
     return {
-        read(): PersistedDownloadItem[] {
+        read(): unknown[] {
             const persistedVersion = store.get('downloadsSchemaVersion') ?? 1;
             if (persistedVersion > DOWNLOADS_SCHEMA_VERSION) {
                 log.warn(
@@ -185,7 +230,11 @@ export function createDownloadSessionRepository(
 
             // Dados sem versão são o formato legado atual. Migrações futuras
             // devem ser aplicadas aqui antes de retornar os itens.
-            return store.get('downloads') ?? [];
+            const downloads: unknown = store.get('downloads');
+            if (downloads === undefined) return [];
+            if (!Array.isArray(downloads))
+                throw new Error('Formato de sessão de downloads inválido');
+            return downloads;
         },
 
         write(items: PersistedDownloadItem[], queueOrder: readonly string[]): void {

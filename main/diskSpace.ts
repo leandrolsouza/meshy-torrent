@@ -40,8 +40,11 @@ export function createDiskSpaceService(
     return {
         async inspect(destinationFolder, selectedBytes, items, excludeHash) {
             try {
-                const destination = await readVolume(resolve(destinationFolder));
-                const volumes = new Map<string, Promise<VolumeSpace>>();
+                const destinationPath = resolve(destinationFolder);
+                const destination = await readVolume(destinationPath);
+                const volumes = new Map<string, Promise<VolumeSpace | undefined>>([
+                    [destinationPath, Promise.resolve(destination)],
+                ]);
                 let reservedBytes = 0;
                 for (const item of items) {
                     if (
@@ -52,10 +55,14 @@ export function createDiskSpaceService(
                     const folder = resolve(item.destinationFolder);
                     let volume = volumes.get(folder);
                     if (!volume) {
-                        volume = readVolume(folder);
+                        // Um destino inacessível será bloqueado na sua própria
+                        // consulta; não deve impedir operações em volumes saudáveis.
+                        volume = Promise.resolve()
+                            .then(() => readVolume(folder))
+                            .catch(() => undefined);
                         volumes.set(folder, volume);
                     }
-                    if ((await volume).volumeId === destination.volumeId) {
+                    if ((await volume)?.volumeId === destination.volumeId) {
                         reservedBytes += Math.max(0, item.totalSize - item.downloadedSize);
                     }
                 }

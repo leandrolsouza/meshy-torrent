@@ -12,6 +12,7 @@ import {
 import { configureTorrentNetwork } from './webtorrentInternals';
 
 const PREVIEW_TTL_MS = 10 * 60_000;
+const CLEANUP_TIMEOUT_MS = 5_000;
 
 /** A preparação nunca abre arquivos no disco nem armazena conteúdo de peças. */
 export class MetadataOnlyStore {
@@ -47,6 +48,7 @@ export function createTorrentPreparation(
     options: {
         createClient?: () => WebTorrent;
         metadataTimeoutMs?: number;
+        cleanupTimeoutMs?: number;
         getNetworkOptions?: () => Pick<AppSettings, 'dhtEnabled' | 'pexEnabled' | 'utpEnabled'>;
     } = {},
 ): TorrentPreparation {
@@ -120,10 +122,32 @@ export function createTorrentPreparation(
                         if (settled) return;
                         settled = true;
                         clearTimeout(timer);
-                        client.destroy((cleanupError) => {
-                            if (error || cleanupError) reject(error ?? cleanupError);
+                        let completed = false;
+                        const complete = (cleanupError?: Error): void => {
+                            if (completed) return;
+                            completed = true;
+                            clearTimeout(cleanupTimer);
+                            const failure = cancelled
+                                ? new Error(ErrorCodes.PREPARATION_CANCELLED)
+                                : (error ?? cleanupError);
+                            if (failure) reject(failure);
                             else if (value) resolve(value);
-                        });
+                        };
+                        // O callback de destroy pode nunca retornar. Nesse caso,
+                        // falhar e liberar a vaga, sem publicar metadados como sucesso.
+                        const cleanupTimer = setTimeout(
+                            () => complete(new Error(ErrorCodes.OPERATION_FAILED)),
+                            options.cleanupTimeoutMs ?? CLEANUP_TIMEOUT_MS,
+                        );
+                        try {
+                            client.destroy(complete);
+                        } catch (cleanupError) {
+                            complete(
+                                cleanupError instanceof Error
+                                    ? cleanupError
+                                    : new Error(String(cleanupError)),
+                            );
+                        }
                     };
                     const timer = setTimeout(
                         () => finish(new Error(ErrorCodes.METADATA_TIMEOUT)),

@@ -157,6 +157,8 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     private readonly engine: DownloadManagerEngine;
     private readonly settings: SettingsManager;
     private readonly sessionRepository: DownloadSessionRepository | undefined;
+    /** Bloqueia snapshots parciais durante a restauração e após uma falha inesperada. */
+    private sessionPersistenceBlocked = false;
     private readonly log: Logger;
     private readonly diskSpace: DiskSpaceService | undefined;
     private admission: Promise<unknown> = Promise.resolve();
@@ -409,7 +411,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                             pauseError,
                         ),
                     );
-                this.persistSession();
+                this._persistSessionAfterEngineError();
                 this._processQueue();
                 return;
             }
@@ -426,7 +428,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             // Um slot foi liberado — processar a fila
             this.seedingSet.delete(infoHash);
             this._scheduleSeeds();
-            this.persistSession();
+            this._persistSessionAfterEngineError();
             this._processQueue();
         });
     }
@@ -1718,38 +1720,26 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     async restoreSession(): Promise<void> {
         if (!this.sessionRepository) return;
 
+        this.sessionPersistenceBlocked = true;
+        await this._restoreSession();
+        this.sessionPersistenceBlocked = false;
+        this.persistSession();
+    }
+
+    private async _restoreSession(): Promise<void> {
+        if (!this.sessionRepository) return;
         const persisted = this.sessionRepository.read();
 
-        for (const persistedItem of persisted) {
-            const validation = validatePersistedDownloadItem(persistedItem);
+        for (const entry of persisted) {
+            const validation = validatePersistedDownloadItem(entry);
             if (!validation.valid) {
-                if (validation.reason === 'info-hash')
-                    this.log.warn(
-                        '[DownloadManager] Item persistido com infoHash inválido, ignorando:',
-                        String(persistedItem.infoHash).slice(0, 8),
-                    );
-                else if (validation.reason === 'status')
-                    this.log.warn(
-                        '[DownloadManager] Item persistido com status inválido, ignorando:',
-                        persistedItem.infoHash.slice(0, 8),
-                        String(persistedItem.status),
-                    );
-                else if (validation.reason === 'magnet-uri')
-                    this.log.warn(
-                        '[DownloadManager] Item persistido com magnetUri inválido, ignorando:',
-                        persistedItem.infoHash.slice(0, 8),
-                    );
-                else if (validation.reason === 'torrent-file-path')
-                    this.log.warn(
-                        '[DownloadManager] Item persistido com torrentFilePath inválido, ignorando:',
-                        persistedItem.infoHash.slice(0, 8),
-                    );
-                else if (validation.reason === 'metadata-encoding')
-                    this.log.warn(
-                        '[DownloadManager] Metadados persistidos inválidos, ignorando item',
-                    );
+                this.log.warn(
+                    '[DownloadManager] Item persistido inválido, ignorando:',
+                    validation.reason,
+                );
                 continue;
             }
+            const persistedItem = validation.item;
             if (validation.metadata)
                 this.confirmedMetadata.set(persistedItem.infoHash, validation.metadata);
             if (persistedItem.creator !== undefined) {
@@ -1952,6 +1942,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
 
     persistSession(): void {
         if (!this.sessionRepository) return;
+        if (this.sessionPersistenceBlocked) {
+            this.log.warn('[DownloadManager] Sessão original preservada: restauração incompleta');
+            return;
+        }
 
         const items = Array.from(this.items.values());
         const persisted: PersistedDownloadItem[] = items.map((item) => {
@@ -1991,6 +1985,18 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     }
 
     // ── Private helpers ─────────────────────────────────────────────────────────
+
+    /** Uma falha ao salvar não pode interromper o tratamento do erro nem a fila. */
+    private _persistSessionAfterEngineError(): void {
+        try {
+            this.persistSession();
+        } catch (error) {
+            this.log.warn(
+                '[DownloadManager] Falha ao persistir sessão após erro da engine:',
+                (error as NodeJS.ErrnoException | undefined)?.code ?? 'UNKNOWN',
+            );
+        }
+    }
 
     /**
      * Serializa operações por torrent: encadeia a próxima operação na Promise
