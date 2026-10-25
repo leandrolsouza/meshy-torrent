@@ -1,11 +1,11 @@
 import { getEffectiveBandwidth } from '../shared/bandwidth';
 import type { SettingsManager } from './settingsManager';
-import type { TorrentEngine } from './torrentEngine';
+import type { BandwidthControlEngine } from './enginePorts';
 
 /** Funciona no main, inclusive com a janela escondida na bandeja. */
 export function createBandwidthController(options: {
     settings: SettingsManager;
-    engine: TorrentEngine;
+    engine: BandwidthControlEngine;
     now?: () => Date;
     disableTimer?: boolean;
 }) {

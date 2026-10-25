@@ -2,12 +2,12 @@ import { access, stat } from 'fs/promises';
 import { constants } from 'fs';
 import type { DownloadDiagnostic, DownloadItem } from '../shared/types';
 import type { DownloadManager } from './downloadManager';
-import type { TorrentEngine } from './torrentEngine';
+import type { DownloadDiagnosticsEngine } from './enginePorts';
 
 /** Observações locais; ausência de peers não permite concluir que o torrent não tem seeders. */
 export function createDownloadDiagnostics(options: {
     manager: DownloadManager;
-    engine: TorrentEngine;
+    engine: DownloadDiagnosticsEngine;
     now?: () => number;
     isFolderAvailable?: (folder: string) => Promise<boolean>;
     disableTimer?: boolean;

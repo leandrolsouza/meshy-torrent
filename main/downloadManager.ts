@@ -1,10 +1,11 @@
 import { EventEmitter } from 'events';
 import { existsSync, accessSync, constants as fsConstants } from 'fs';
-import type { TorrentEngine, TorrentInfo } from './torrentEngine';
+import type { TorrentInfo } from './torrentEngine';
+import type { DownloadManagerEngine } from './enginePorts';
 import type { SettingsManager } from './settingsManager';
 import type { DiskSpaceService } from './diskSpace';
 import type { PreparedTorrent } from './torrentPreparation';
-import { createTorrentFilesService, isSafeTorrentPath, resolveTorrentFile } from './torrentFiles';
+import { createTorrentFilesService, resolveTorrentFile } from './torrentFiles';
 import type { TorrentFilesService, FileMove } from './torrentFiles';
 import type { FileOperation } from '../shared/types';
 import { ErrorCodes } from '../shared/errorCodes';
@@ -16,13 +17,15 @@ import type {
     DiskSpaceInfo,
     TorrentMetadata,
 } from '../shared/types';
-import {
-    DEFAULT_MAX_CONCURRENT_DOWNLOADS,
-    MAX_TORRENT_BYTES,
-    hasTorrentMagicBytes,
-} from '../shared/validators';
+import { DEFAULT_MAX_CONCURRENT_DOWNLOADS } from '../shared/validators';
 import { logger as defaultLogger } from './logger';
 import type { Logger } from './logger';
+import {
+    createDownloadSessionRepository,
+    serializePersistedDownloadItem,
+    validatePersistedDownloadItem,
+} from './downloadSession';
+import type { DownloadSessionRepository, PersistedStore } from './downloadSession';
 
 export type { DownloadItem, PersistedDownloadItem } from '../shared/types';
 
@@ -72,17 +75,7 @@ export interface DownloadManager {
     removeListener(event: 'remove', listener: (infoHash: string) => void): void;
 }
 
-// ─── Store interface (subset used by DownloadManager) ─────────────────────────
-
-/**
- * Minimal interface for the persisted store, allowing injection of a mock in tests.
- */
-export interface PersistedStore {
-    get(key: 'downloads'): PersistedDownloadItem[] | undefined;
-    get(key: 'downloadsSchemaVersion'): number | undefined;
-    set(key: 'downloads', value: PersistedDownloadItem[]): void;
-    set(key: 'downloadsSchemaVersion', value: number): void;
-}
+export type { PersistedStore } from './downloadSession';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -111,9 +104,6 @@ function torrentInfoToDownloadItem(
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const METADATA_TIMEOUT_MS = 60_000;
-
-/** Versão atual do schema de downloads persistidos */
-const DOWNLOADS_SCHEMA_VERSION = 1;
 
 /** Configuração de retry com exponential backoff */
 const RETRY_MAX_ATTEMPTS = 3;
@@ -164,9 +154,9 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     private readonly queuedMagnetUris = new Map<string, string>();
     /** Armazena o magnetUri original de todos os torrents adicionados via magnet link (para persistência) */
     private readonly originalMagnetUris = new Map<string, string>();
-    private readonly engine: TorrentEngine;
+    private readonly engine: DownloadManagerEngine;
     private readonly settings: SettingsManager;
-    private readonly store: PersistedStore | undefined;
+    private readonly sessionRepository: DownloadSessionRepository | undefined;
     private readonly log: Logger;
     private readonly diskSpace: DiskSpaceService | undefined;
     private admission: Promise<unknown> = Promise.resolve();
@@ -182,7 +172,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     private readonly opLocks = new Map<string, Promise<unknown>>();
 
     constructor(
-        engine: TorrentEngine,
+        engine: DownloadManagerEngine,
         settings: SettingsManager,
         store?: PersistedStore,
         log?: Logger,
@@ -201,8 +191,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
         this.torrentFiles = options?.torrentFiles ?? createTorrentFilesService();
         this.recoverMetadata = options?.recoverMetadata;
         this.settings = settings;
-        this.store = store;
         this.log = log ?? defaultLogger;
+        this.sessionRepository = store
+            ? createDownloadSessionRepository(store, this.log)
+            : undefined;
         this.diskSpace = options?.diskSpace;
         this.maxConcurrent =
             settings.get().maxConcurrentDownloads ?? DEFAULT_MAX_CONCURRENT_DOWNLOADS;
@@ -1724,103 +1716,42 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     // ── restoreSession ──────────────────────────────────────────────────────────
 
     async restoreSession(): Promise<void> {
-        if (!this.store) return;
+        if (!this.sessionRepository) return;
 
-        // ── Migração de schema ────────────────────────────────────────────────
-        // Verifica a versão do schema persistido e aplica migrações se necessário.
-        // Dados sem versão (legado) são tratados como versão 1 (formato atual).
-        const persistedVersion = this.store.get('downloadsSchemaVersion') ?? 1;
-
-        if (persistedVersion > DOWNLOADS_SCHEMA_VERSION) {
-            this.log.warn(
-                '[DownloadManager] Schema de downloads mais recente que o esperado:',
-                `persistido=${persistedVersion}`,
-                `atual=${DOWNLOADS_SCHEMA_VERSION}`,
-                '— tentando carregar mesmo assim',
-            );
-        }
-
-        // Migrações futuras seriam aplicadas aqui:
-        // if (persistedVersion < 2) { migrateV1toV2(store); }
-        // if (persistedVersion < 3) { migrateV2toV3(store); }
-
-        const persisted = this.store.get('downloads') ?? [];
+        const persisted = this.sessionRepository.read();
 
         for (const persistedItem of persisted) {
-            // ── Validação de integridade dos dados persistidos ─────────────────
-            // Rejeita itens com campos obrigatórios inválidos ou corrompidos.
-            if (
-                typeof persistedItem.infoHash !== 'string' ||
-                persistedItem.infoHash.length !== 40
-            ) {
-                this.log.warn(
-                    '[DownloadManager] Item persistido com infoHash inválido, ignorando:',
-                    String(persistedItem.infoHash).slice(0, 8),
-                );
-                continue;
-            }
-
-            const validStatuses: TorrentStatus[] = [
-                'queued',
-                'resolving-metadata',
-                'downloading',
-                'paused',
-                'completed',
-                'seeding',
-                'error',
-                'metadata-failed',
-                'files-not-found',
-            ];
-            if (!validStatuses.includes(persistedItem.status)) {
-                this.log.warn(
-                    '[DownloadManager] Item persistido com status inválido, ignorando:',
-                    persistedItem.infoHash.slice(0, 8),
-                    String(persistedItem.status),
-                );
-                continue;
-            }
-
-            if (
-                persistedItem.magnetUri !== undefined &&
-                (typeof persistedItem.magnetUri !== 'string' ||
-                    !persistedItem.magnetUri.startsWith('magnet:'))
-            ) {
-                this.log.warn(
-                    '[DownloadManager] Item persistido com magnetUri inválido, ignorando:',
-                    persistedItem.infoHash.slice(0, 8),
-                );
-                continue;
-            }
-
-            if (
-                persistedItem.torrentFilePath !== undefined &&
-                (typeof persistedItem.torrentFilePath !== 'string' ||
-                    persistedItem.torrentFilePath.length === 0)
-            ) {
-                this.log.warn(
-                    '[DownloadManager] Item persistido com torrentFilePath inválido, ignorando:',
-                    persistedItem.infoHash.slice(0, 8),
-                );
-                continue;
-            }
-
-            // Check if destination folder exists
-            if (persistedItem.torrentFileBase64 !== undefined) {
-                const encoded = persistedItem.torrentFileBase64;
-                if (
-                    typeof encoded !== 'string' ||
-                    encoded.length > Math.ceil(MAX_TORRENT_BYTES / 3) * 4 ||
-                    !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)
-                ) {
+            const validation = validatePersistedDownloadItem(persistedItem);
+            if (!validation.valid) {
+                if (validation.reason === 'info-hash')
+                    this.log.warn(
+                        '[DownloadManager] Item persistido com infoHash inválido, ignorando:',
+                        String(persistedItem.infoHash).slice(0, 8),
+                    );
+                else if (validation.reason === 'status')
+                    this.log.warn(
+                        '[DownloadManager] Item persistido com status inválido, ignorando:',
+                        persistedItem.infoHash.slice(0, 8),
+                        String(persistedItem.status),
+                    );
+                else if (validation.reason === 'magnet-uri')
+                    this.log.warn(
+                        '[DownloadManager] Item persistido com magnetUri inválido, ignorando:',
+                        persistedItem.infoHash.slice(0, 8),
+                    );
+                else if (validation.reason === 'torrent-file-path')
+                    this.log.warn(
+                        '[DownloadManager] Item persistido com torrentFilePath inválido, ignorando:',
+                        persistedItem.infoHash.slice(0, 8),
+                    );
+                else if (validation.reason === 'metadata-encoding')
                     this.log.warn(
                         '[DownloadManager] Metadados persistidos inválidos, ignorando item',
                     );
-                    continue;
-                }
-                const buffer = Buffer.from(encoded, 'base64');
-                if (!hasTorrentMagicBytes(buffer)) continue;
-                this.confirmedMetadata.set(persistedItem.infoHash, buffer);
+                continue;
             }
+            if (validation.metadata)
+                this.confirmedMetadata.set(persistedItem.infoHash, validation.metadata);
             if (persistedItem.creator !== undefined) {
                 this._metadataCache.set(persistedItem.infoHash, {
                     infoHash: persistedItem.infoHash,
@@ -1874,30 +1805,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             };
 
             this.items.set(item.infoHash, item);
-            if (
-                Array.isArray(persistedItem.files) &&
-                persistedItem.files.every(
-                    (file, index) =>
-                        file &&
-                        file.index === index &&
-                        isSafeTorrentPath(file.path) &&
-                        typeof file.name === 'string' &&
-                        Number.isSafeInteger(file.length) &&
-                        file.length >= 0 &&
-                        typeof file.downloaded === 'number' &&
-                        Number.isFinite(file.downloaded) &&
-                        file.downloaded >= 0 &&
-                        typeof file.selected === 'boolean',
-                )
-            ) {
-                this.fileCatalog.set(
-                    item.infoHash,
-                    persistedItem.files.map((file) => ({
-                        ...file,
-                        downloaded: Math.min(file.length, file.downloaded),
-                    })),
-                );
-            }
+            if (validation.files) this.fileCatalog.set(item.infoHash, validation.files);
             this.emit('update', item);
 
             // Arquivos/buffers legados podem ter apenas metadados inline. O magnet
@@ -2043,7 +1951,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     // ── persistSession ──────────────────────────────────────────────────────────
 
     persistSession(): void {
-        if (!this.store) return;
+        if (!this.sessionRepository) return;
 
         const items = Array.from(this.items.values());
         const persisted: PersistedDownloadItem[] = items.map((item) => {
@@ -2055,25 +1963,11 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                 this.queuedMagnetUris.get(item.infoHash);
             const selectedFileIndices = this.selectedFileIndicesMap.get(item.infoHash);
             const cachedMeta = this._metadataCache.get(item.infoHash);
-            return {
-                infoHash: item.infoHash,
-                name: item.name,
-                totalSize: item.totalSize,
-                downloadedSize: item.downloadedSize,
-                progress: item.progress,
-                status: item.status,
-                destinationFolder: item.destinationFolder,
-                addedAt: item.addedAt,
-                ...(item.seedingDisabled !== undefined
-                    ? { seedingDisabled: item.seedingDisabled }
-                    : {}),
-                ...(item.completedAt !== undefined ? { completedAt: item.completedAt } : {}),
-                ...(item.elapsedMs !== undefined ? { elapsedMs: item.elapsedMs } : {}),
+            return serializePersistedDownloadItem({
+                item,
+                files,
                 ...(selectedFileIndices !== undefined ? { selectedFileIndices } : {}),
                 ...(magnetUri !== undefined ? { magnetUri } : {}),
-                ...(item.errorMessage !== undefined ? { errorMessage: item.errorMessage } : {}),
-                ...(item.pauseReason ? { pauseReason: item.pauseReason } : {}),
-                ...(files.length ? { files } : {}),
                 ...(this.confirmedMetadata.has(item.infoHash)
                     ? {
                           torrentFileBase64: this.confirmedMetadata
@@ -2081,38 +1975,11 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                               .toString('base64'),
                       }
                     : {}),
-                ...(item.selectedFileCount !== undefined
-                    ? { selectedFileCount: item.selectedFileCount }
-                    : {}),
-                ...(item.totalFileCount !== undefined
-                    ? { totalFileCount: item.totalFileCount }
-                    : {}),
-                ...(cachedMeta !== undefined
-                    ? {
-                          creator: cachedMeta.creator,
-                          comment: cachedMeta.comment,
-                          creationDate: cachedMeta.creationDate,
-                      }
-                    : {}),
-            };
+                ...(cachedMeta !== undefined ? { cachedMetadata: cachedMeta } : {}),
+            });
         });
 
-        // Ordenar itens queued de acordo com a ordem do array queue
-        const queuedItems = persisted.filter((p) => p.status === 'queued');
-        const nonQueuedItems = persisted.filter((p) => p.status !== 'queued');
-
-        // Ordenar os itens queued pela posição no array queue
-        queuedItems.sort((a, b) => {
-            const idxA = this.queue.indexOf(a.infoHash);
-            const idxB = this.queue.indexOf(b.infoHash);
-            return idxA - idxB;
-        });
-
-        // Reconstruir o array persistido: não-queued primeiro, depois queued na ordem da fila
-        const sorted = [...nonQueuedItems, ...queuedItems];
-
-        this.store.set('downloads', sorted);
-        this.store.set('downloadsSchemaVersion', DOWNLOADS_SCHEMA_VERSION);
+        this.sessionRepository.write(persisted, this.queue);
     }
 
     // ── setMaxConcurrentDownloads ───────────────────────────────────────────────
@@ -2500,7 +2367,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
  * @param options   Optional configuration (e.g., disableCleanupTimer for tests).
  */
 export function createDownloadManager(
-    engine: TorrentEngine,
+    engine: DownloadManagerEngine,
     settings: SettingsManager,
     store?: PersistedStore,
     log?: Logger,

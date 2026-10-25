@@ -5,7 +5,7 @@ Releases. As notas já publicadas são registros históricos e não devem ser
 traduzidas. Use o [template de notas](releases/TEMPLATE.md) ao preparar uma nova
 versão.
 
-O próximo candidato é **0.1.0-beta.5 para Windows x64**, com instalador NSIS por
+O próximo candidato é **0.1.0-beta.8 para Windows x64**, com instalador NSIS por
 usuário. macOS e Linux continuam configurados no electron-builder, mas precisam de
 homologação própria antes de serem anunciados como plataformas deste release.
 
@@ -34,8 +34,8 @@ cabeçalhos e ferramentas do electron-builder. Não executa o instalador nem pub
 
 Arquivos esperados para esta versão:
 
-- `dist/Meshy Torrent-0.1.0-beta.5-win-x64-setup.exe`
-- `dist/Meshy Torrent-0.1.0-beta.5-win-x64-setup.exe.blockmap`
+- `dist/Meshy-Torrent-0.1.0-beta.8-win-x64-setup.exe`
+- `dist/Meshy-Torrent-0.1.0-beta.8-win-x64-setup.exe.blockmap`
 - `dist/latest.yml`
 - `dist/SHA256SUMS`
 
@@ -50,8 +50,8 @@ Para conferir no PowerShell, execute na pasta dos arquivos extraídos:
 
 ```powershell
 Get-Content SHA256SUMS
-Get-FileHash -Algorithm SHA256 .\Meshy Torrent-0.1.0-beta.5-win-x64-setup.exe
-Get-AuthenticodeSignature .\Meshy Torrent-0.1.0-beta.5-win-x64-setup.exe
+Get-FileHash -Algorithm SHA256 ".\Meshy-Torrent-0.1.0-beta.8-win-x64-setup.exe"
+Get-AuthenticodeSignature ".\Meshy-Torrent-0.1.0-beta.8-win-x64-setup.exe"
 ```
 
 Compare o hash calculado com `SHA256SUMS`. Um checksum não comprova a identidade
@@ -216,7 +216,7 @@ utilizados continuam incorporados ao bundle. Veja o [registro de fontes e revis�
 - [x] Homologação em máquina limpa aprovada pelo usuário para o candidato testado.
 - [x] Confirmar que a beta sem assinatura usa o feed oficial e valida SHA-512.
 - [x] Licença, autoria e avisos de terceiros conferidos no pacote Windows local.
-- [x] [Notas da versão](releases/0.1.0-beta.5.md) descrevem a correção incluída.
+- [x] [Notas da versão](releases/0.1.0-beta.8.md) descrevem a correção incluída.
 - [ ] Tag, commit e arquivos finais correspondem; checksums calculados após o build final.
 - [ ] Criar o GitHub Release como **pre-release** e anexar instalador, blockmap,
       `latest.yml` e `SHA256SUMS` da mesma execução.
@@ -225,12 +225,12 @@ Os dois últimos itens são concluídos pelo workflow da tag. Para publicar esta
 com o commit final verificado e enviado ao repositório:
 
 ```sh
-git tag -a v0.1.0-beta.5 -m "Meshy Torrent 0.1.0-beta.5"
-git push origin v0.1.0-beta.5
+git tag -a v0.1.0-beta.8 -m "Meshy Torrent 0.1.0-beta.8"
+git push origin v0.1.0-beta.8
 ```
 
 Acompanhe Windows, auditoria e publicação no GitHub Actions. A versão publicada fica
-em [v0.1.0-beta.5](https://github.com/leandrolsouza/meshy-torrent/releases/tag/v0.1.0-beta.5).
+em [v0.1.0-beta.8](https://github.com/leandrolsouza/meshy-torrent/releases/tag/v0.1.0-beta.8).
 
 O atualizador está integrado, com instruções em [AUTO_UPDATES.md](AUTO_UPDATES.md).
 Sem certificado, o app informa que não valida a identidade do editor; builds
