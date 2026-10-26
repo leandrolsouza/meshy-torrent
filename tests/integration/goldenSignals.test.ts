@@ -17,6 +17,12 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(),
 }));
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    stat: jest.fn().mockResolvedValue({ isDirectory: () => true } as any),
+    access: jest.fn().mockResolvedValue(undefined),
+}));
+
 const options = {
     downloadPath: '/fixture',
     downloadSpeedLimit: 0,
@@ -151,7 +157,7 @@ test('gauge real inclui reservas pendentes e fila; conclusão selecionada e done
         getMetadata: jest.fn(() => {
             throw new Error('Sem metadados');
         }),
-        pause: jest.fn(async () => {}),
+        pause: jest.fn(async () => { }),
         addMagnetLink: jest.fn(async (magnet: string) =>
             info(magnet.includes('a'.repeat(40)) ? 'a' : 'b'),
         ),

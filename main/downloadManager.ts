@@ -934,62 +934,60 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     // ── addMagnetLink ───────────────────────────────────────────────────────────
 
     async addMagnetLink(magnetUri: string): Promise<DownloadItem> {
-        // Validate destination folder before starting the transfer
         const destinationFolder = this.settings.get().destinationFolder;
-        await validateDestinationFolder(destinationFolder);
 
         // Extract infoHash from magnet URI for early duplicate detection
         const hashMatch = magnetUri.match(/xt=urn:btih:([a-fA-F0-9]{40})/i);
-        if (hashMatch) {
-            const infoHash = hashMatch[1]!.toLowerCase();
-            if (this.items.has(infoHash) || this.pendingHashes.has(infoHash)) {
-                throw new Error('Torrent já existe na lista');
-            }
+        const pendingHash = hashMatch?.[1]?.toLowerCase();
+        if (pendingHash && (this.items.has(pendingHash) || this.pendingHashes.has(pendingHash))) {
+            throw new Error('Torrent já existe na lista');
         }
+        if (pendingHash) this.pendingHashes.add(pendingHash);
 
         // Verificar se há slots disponíveis
         const hasSlot = this._activeCount() < this.maxConcurrent;
-
-        // Para magnet links sem slot, enfileirar sem adicionar ao engine
-        // (evita resolver metadados desnecessariamente)
-        if (!hasSlot && hashMatch) {
-            const infoHash = hashMatch[1]!.toLowerCase();
-            const addedAt = Date.now();
-
-            // Extrair display name (dn) do magnet URI, se disponível
-            const dnMatch = magnetUri.match(/[?&]dn=([^&]+)/);
-            const rawDn = dnMatch?.[1];
-            const magnetName = rawDn ? decodeURIComponent(rawDn) : infoHash;
-
-            const item: DownloadItem = {
-                infoHash,
-                name: magnetName,
-                totalSize: 0,
-                downloadedSize: 0,
-                progress: 0,
-                downloadSpeed: 0,
-                uploadSpeed: 0,
-                numPeers: 0,
-                numSeeders: 0,
-                timeRemaining: Infinity,
-                status: 'queued',
-                destinationFolder,
-                addedAt,
-            };
-
-            this.items.set(item.infoHash, item);
-            this.queuedMagnetUris.set(item.infoHash, magnetUri);
-            this.originalMagnetUris.set(item.infoHash, magnetUri);
-            this._enqueue(item.infoHash);
-            this.emit('update', item);
-
-            return item;
-        }
-
-        const pendingHash = hashMatch?.[1]?.toLowerCase();
-        if (pendingHash) this.pendingHashes.add(pendingHash);
         if (hasSlot) this.pendingAdds++;
+
         try {
+            // Validação de pasta usa I/O assíncrono; reservar o slot antes do await
+            // para manter o estado operacional coerente durante a validação.
+            await validateDestinationFolder(destinationFolder);
+
+            // Para magnet links sem slot, enfileirar sem adicionar ao engine
+            // (evita resolver metadados desnecessariamente)
+            if (!hasSlot && pendingHash) {
+                const addedAt = Date.now();
+
+                // Extrair display name (dn) do magnet URI, se disponível
+                const dnMatch = magnetUri.match(/[?&]dn=([^&]+)/);
+                const rawDn = dnMatch?.[1];
+                const magnetName = rawDn ? decodeURIComponent(rawDn) : pendingHash;
+
+                const item: DownloadItem = {
+                    infoHash: pendingHash,
+                    name: magnetName,
+                    totalSize: 0,
+                    downloadedSize: 0,
+                    progress: 0,
+                    downloadSpeed: 0,
+                    uploadSpeed: 0,
+                    numPeers: 0,
+                    numSeeders: 0,
+                    timeRemaining: Infinity,
+                    status: 'queued',
+                    destinationFolder,
+                    addedAt,
+                };
+
+                this.items.set(item.infoHash, item);
+                this.queuedMagnetUris.set(item.infoHash, magnetUri);
+                this.originalMagnetUris.set(item.infoHash, magnetUri);
+                this._enqueue(item.infoHash);
+                this.emit('update', item);
+
+                return item;
+            }
+
             const info = await this.engine.addMagnetLink(magnetUri, false, { destinationFolder });
 
             // Armazenar magnetUri original para persistência de sessão

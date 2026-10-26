@@ -27,6 +27,19 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(),
 }));
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    access: jest.fn(async (path: string) => {
+        jest.requireMock('fs').accessSync(path);
+    }),
+    stat: jest.fn(async (path: string) => {
+        if (!jest.requireMock('fs').existsSync(path)) {
+            throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        }
+        return { isDirectory: () => true };
+    }),
+}));
+
 const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
 const mockAccessSync = accessSync as jest.MockedFunction<typeof accessSync>;
 

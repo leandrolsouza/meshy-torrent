@@ -36,6 +36,8 @@ jest.mock('fs/promises', () => ({
     readFile: jest.fn(),
     rm: jest.fn(),
     readdir: jest.fn(),
+    stat: jest.fn().mockResolvedValue({ isDirectory: () => true, isFile: () => false }),
+    access: jest.fn().mockResolvedValue(undefined),
 }));
 
 // Mock fs para validação de pasta no DownloadManager.
@@ -147,8 +149,8 @@ function assertNoSensitiveValue(logLines: string[], sensitiveValues: string[]): 
             if (line.includes(sensitive)) {
                 throw new Error(
                     `Log contém dado sensível.\n` +
-                        `  Valor proibido: "${sensitive}"\n` +
-                        `  Linha de log:   "${line}"`,
+                    `  Valor proibido: "${sensitive}"\n` +
+                    `  Linha de log:   "${line}"`,
                 );
             }
         }

@@ -38,6 +38,12 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(),
 }));
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    stat: jest.fn().mockResolvedValue({ isDirectory: () => true } as any),
+    access: jest.fn().mockResolvedValue(undefined),
+}));
+
 const { ipcMain: mockIpcMain, dialog: mockDialog } = require('electron') as {
     ipcMain: { handle: jest.Mock };
     dialog: { showOpenDialog: jest.Mock };

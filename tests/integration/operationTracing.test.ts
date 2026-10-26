@@ -25,10 +25,15 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(),
 }));
 
-const remote = { traceId: '1'.repeat(32), spanId: '2'.repeat(16) };
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    stat: jest.fn().mockResolvedValue({ isDirectory: () => true } as any),
+    access: jest.fn().mockResolvedValue(undefined),
+}));
 const settings = {
     get: () => ({ destinationFolder: '/fixture', maxConcurrentDownloads: 1 }),
 } as unknown as SettingsManager;
+const remote = { traceId: '1'.repeat(32), spanId: '2'.repeat(16) };
 
 function handler(channel: string) {
     return jest.mocked(ipcMain.handle).mock.calls.find(([name]) => name === channel)![1];

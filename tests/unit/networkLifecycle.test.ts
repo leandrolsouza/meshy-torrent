@@ -10,6 +10,12 @@ import {
 } from '../../main/webtorrentInternals';
 import type { Torrent } from 'webtorrent';
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    stat: jest.fn().mockResolvedValue({ isDirectory: () => true } as any),
+    access: jest.fn().mockResolvedValue(undefined),
+}));
+
 const mockClients: MockClient[] = [];
 jest.mock('webtorrent', () => ({
     __esModule: true,
@@ -236,6 +242,9 @@ test('queued buffers are born paused, before store initialization can announce',
     const { client, manager } = setup();
     await manager.addMagnetLink(magnet(hashOf(1)));
     const pending = manager.addTorrentBuffer(Buffer.from('d4:test4:datae'));
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     jest.runAllTicks();
     const item = await pending;
     expect(item.status).toBe('queued');

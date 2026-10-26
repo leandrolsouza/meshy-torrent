@@ -237,10 +237,10 @@ export function registerTorrentIpcHandlers({
                 return fail(ErrorCodes.FILE_SELECTION_EMPTY);
             if (confirming.has(requestId)) return fail(ErrorCodes.INVALID_PARAMS);
             if (torrentEngine?.isRestarting()) return fail(ErrorCodes.ENGINE_RESTARTING);
-            if (!(await hasWritePermission(selection.destinationFolder)))
-                return fail(ErrorCodes.DESTINATION_FOLDER_NOT_FOUND);
             confirming.add(requestId);
             ownsConfirmation = true;
+            if (!(await hasWritePermission(selection.destinationFolder)))
+                return fail(ErrorCodes.DESTINATION_FOLDER_NOT_FOUND);
             const item = await downloadManager.addPreparedTorrent(
                 preparation!.get(requestId),
                 selection.destinationFolder,

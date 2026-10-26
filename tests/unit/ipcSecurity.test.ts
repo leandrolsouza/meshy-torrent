@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import { resolve } from 'path';
 import { ipcMain, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
-import { statSync } from 'fs';
+import { stat } from 'fs/promises';
 import { registerIpcHandlers, _rateLimiter } from '../../main/ipcHandler';
 import { rendererSecurity } from '../../main/rendererSecurity';
 import type { DownloadManager } from '../../main/downloadManager';
@@ -26,6 +26,8 @@ jest.mock('fs/promises', () => ({
     ...jest.requireActual('fs/promises'),
     realpath: jest.fn(async (folder: string) => require('path').resolve(folder)),
     lstat: jest.fn(async () => ({ isSymbolicLink: () => false })),
+    stat: jest.fn().mockResolvedValue({ isDirectory: () => true, isFile: () => false }),
+    access: jest.fn().mockResolvedValue(undefined),
 }));
 
 const rendererUrl = 'file:///C:/Meshy/renderer/index.html';
@@ -182,7 +184,9 @@ test('abre mídia permitida pelo caminho contido do torrent', async () => {
 
 test('open-folder não usa um arquivo como diretório para iniciar executáveis', async () => {
     const { invoke } = setup();
-    (statSync as jest.Mock).mockReturnValueOnce({ isDirectory: () => false });
+    jest.mocked(stat).mockResolvedValueOnce({ isDirectory: () => false } as Awaited<
+        ReturnType<typeof stat>
+    >);
     expect(await invoke('torrent:open-folder', { infoHash: hash })).toEqual({
         success: false,
         error: ErrorCodes.DESTINATION_FOLDER_NOT_FOUND,

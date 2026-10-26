@@ -28,6 +28,7 @@ jest.mock('../../main/rendererSecurity', () => ({ isTrustedIpcSender: jest.fn(()
 // ─── FS Mocks (hoisted by Jest) ───────────────────────────────────────────────
 
 import { existsSync, accessSync } from 'fs';
+import { stat, access } from 'fs/promises';
 
 jest.mock('fs', () => ({
     ...jest.requireActual('fs'),
@@ -35,8 +36,16 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(),
 }));
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    stat: jest.fn(),
+    access: jest.fn(),
+}));
+
 const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
 const mockAccessSync = accessSync as jest.MockedFunction<typeof accessSync>;
+const mockStat = stat as jest.MockedFunction<typeof stat>;
+const mockAccess = access as jest.MockedFunction<typeof access>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -152,6 +161,8 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
         jest.clearAllMocks();
         mockExistsSync.mockReturnValue(true);
         mockAccessSync.mockReturnValue(undefined);
+        mockStat.mockResolvedValue({ isDirectory: () => true } as any);
+        mockAccess.mockResolvedValue(undefined);
     });
 
     afterEach(() => {
@@ -756,6 +767,7 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
 
             // Destination folder does NOT exist
             mockExistsSync.mockReturnValue(false);
+            mockStat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
             const manager = createDownloadManager(engine, settings, store);
             await manager.restoreSession();
@@ -792,6 +804,7 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
 
             // Destination folder does NOT exist
             mockExistsSync.mockReturnValue(false);
+            mockStat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
             const manager = createDownloadManager(engine, settings, store);
             await manager.restoreSession();
@@ -828,6 +841,7 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
 
             // Destination folder does NOT exist
             mockExistsSync.mockReturnValue(false);
+            mockStat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
             const manager = createDownloadManager(engine, settings, store);
             await manager.restoreSession();
@@ -929,6 +943,11 @@ describe('Integration: Session Persistence (Requirements 7.1, 7.2, 7.3, 7.4)', (
             mockExistsSync.mockImplementation((path: unknown) => {
                 return path !== '/nonexistent/folder';
             });
+            mockStat.mockImplementation((path) =>
+                path.toString() === '/nonexistent/folder'
+                    ? Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
+                    : Promise.resolve({ isDirectory: () => true } as any),
+            );
 
             const manager = createDownloadManager(engine, settings, store);
             await manager.restoreSession();
@@ -1119,6 +1138,8 @@ describe('Integração: recuperação de sessão parcialmente corrompida', () =>
         jest.clearAllMocks();
         mockExistsSync.mockReturnValue(true);
         mockAccessSync.mockReturnValue(undefined);
+        mockStat.mockResolvedValue({ isDirectory: () => true } as any);
+        mockAccess.mockResolvedValue(undefined);
     });
 
     it.each([
@@ -1217,7 +1238,7 @@ describe('Integração: recuperação de sessão parcialmente corrompida', () =>
             }),
         );
         const restoration = manager.restoreSession();
-        await Promise.resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
         expect(engine.addMagnetLink).toHaveBeenCalled();
         manager.persistSession();
         expect(store.set).not.toHaveBeenCalled();
@@ -1237,6 +1258,8 @@ describe('Integration: TorrentMetadata persisted and restored for completed torr
         jest.clearAllMocks();
         mockExistsSync.mockReturnValue(true);
         mockAccessSync.mockReturnValue(undefined);
+        mockStat.mockResolvedValue({ isDirectory: () => true } as any);
+        mockAccess.mockResolvedValue(undefined);
     });
 
     afterEach(() => {

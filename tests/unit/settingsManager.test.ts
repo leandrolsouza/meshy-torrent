@@ -594,12 +594,6 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(),
 }));
 
-jest.mock('fs/promises', () => ({
-    ...jest.requireActual('fs/promises'),
-    stat: jest.fn(),
-    access: jest.fn(),
-}));
-
 const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
 const mockAccessSync = accessSync as jest.MockedFunction<typeof accessSync>;
 const mockStat = stat as jest.MockedFunction<typeof stat>;

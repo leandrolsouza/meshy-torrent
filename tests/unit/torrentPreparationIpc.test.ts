@@ -3,6 +3,12 @@ jest.mock('../../main/rendererSecurity', () => ({
     isTrustedIpcSender: jest.fn(() => true),
 }));
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    stat: jest.fn().mockResolvedValue({ isDirectory: () => true } as any),
+    access: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { ipcMain } from 'electron';
 import { registerIpcHandlers, _rateLimiter } from '../../main/ipcHandler';
 import type { DownloadManager } from '../../main/downloadManager';

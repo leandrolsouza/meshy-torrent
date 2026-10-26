@@ -1,6 +1,17 @@
 // ─── Global test setup ────────────────────────────────────────────────────────
 // Mocks for modules that require Electron runtime and are not available in Jest.
 
+jest.mock('fs/promises', () => {
+    const actual = jest.requireActual<typeof import('fs/promises')>('fs/promises');
+    return {
+        ...actual,
+        // Wrap as jest.fn() so individual tests can spy on or override these
+        // without changing the default behaviour (real Node.js implementations).
+        stat: jest.fn((...args: Parameters<typeof actual.stat>) => actual.stat(...args)),
+        access: jest.fn((...args: Parameters<typeof actual.access>) => actual.access(...args)),
+    };
+});
+
 jest.mock('electron-log', () => ({
     __esModule: true,
     default: {
