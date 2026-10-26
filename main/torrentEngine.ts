@@ -145,6 +145,9 @@ const PAUSE_RESUME_TIMEOUT_MS = 5_000;
 /** Timeout para o restart do engine (30 segundos) */
 const RESTART_TIMEOUT_MS = 30_000;
 
+/** Limita a frequência de snapshots caros gerados por eventos de transferência. */
+const TRANSFER_PROGRESS_INTERVAL_MS = 200;
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 function torrentToInfo(torrent: Torrent, status: TorrentStatus): TorrentInfo {
@@ -167,6 +170,7 @@ function torrentToInfo(torrent: Torrent, status: TorrentStatus): TorrentInfo {
 
 class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
     private readonly operationContexts = new WeakMap<Torrent, OperationContext>();
+    private readonly transferProgressTimers = new Map<string, ReturnType<typeof setTimeout>>();
     private client: WebTorrent;
     private downloadPath: string;
     /** Tracks the current status for each infoHash */
@@ -484,6 +488,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         const torrent = this._getTorrent(infoHash);
         if (torrent) this._rememberOperation(torrent);
         if (!torrent) {
+            this._clearTransferProgressTimer(infoHash);
             // Already removed — treat as success
             this.statusMap.delete(infoHash);
             this.selectionMap.delete(infoHash);
@@ -514,6 +519,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
                     reject(err instanceof Error ? err : new Error(String(err)));
                     return;
                 }
+                this._clearTransferProgressTimer(infoHash);
                 this.statusMap.delete(infoHash);
                 this.selectionMap.delete(infoHash);
                 resolve();
@@ -544,6 +550,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
                 ),
             );
         }
+        this._clearTransferProgressTimer(infoHash);
         this.statusMap.delete(infoHash);
         this.selectionMap.delete(infoHash);
         this.pendingMagnets.delete(infoHash);
@@ -912,6 +919,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         cancelled: () => boolean,
     ): Promise<void> {
         const previous = this.client;
+        this._clearTransferProgressTimers();
         const saved = previous.torrents.map((t) => ({
             infoHash: t.infoHash,
             magnetURI: t.magnetURI,
@@ -1006,6 +1014,38 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         return runWithOperationContext(this.operationContexts.get(torrent), callback);
     }
 
+    private _scheduleTransferProgress(torrent: Torrent): void {
+        const infoHash = torrent.infoHash;
+        if (this.transferProgressTimers.has(infoHash)) return;
+
+        const timer = setTimeout(() => {
+            this.transferProgressTimers.delete(infoHash);
+            if (
+                this._getTorrent(infoHash) !== torrent ||
+                (torrent as Torrent & { destroyed?: boolean }).destroyed
+            )
+                return;
+
+            this._withTorrentContext(torrent, () => {
+                const status = this.statusMap.get(infoHash) ?? 'downloading';
+                this.emit('progress', { ...torrentToInfo(torrent, status), infoHash });
+            });
+        }, TRANSFER_PROGRESS_INTERVAL_MS);
+        timer.unref();
+        this.transferProgressTimers.set(infoHash, timer);
+    }
+
+    private _clearTransferProgressTimer(infoHash: string): void {
+        const timer = this.transferProgressTimers.get(infoHash);
+        if (timer) clearTimeout(timer);
+        this.transferProgressTimers.delete(infoHash);
+    }
+
+    private _clearTransferProgressTimers(): void {
+        for (const timer of this.transferProgressTimers.values()) clearTimeout(timer);
+        this.transferProgressTimers.clear();
+    }
+
     private _attachTorrentListeners(torrent: Torrent): void {
         this._rememberOperation(torrent);
         torrent.on('warning', (err) =>
@@ -1025,16 +1065,14 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         torrent.on('download', (bytes: number) =>
             this._withTorrentContext(torrent, () => {
                 this.transferMetrics.recordTransfer('download', bytes);
-                const status = this.statusMap.get(torrent.infoHash) ?? 'downloading';
-                this.emit('progress', torrentToInfo(torrent, status));
+                this._scheduleTransferProgress(torrent);
             }),
         );
 
         torrent.on('upload', (bytes: number) =>
             this._withTorrentContext(torrent, () => {
                 this.transferMetrics.recordTransfer('upload', bytes);
-                const status = this.statusMap.get(torrent.infoHash) ?? 'downloading';
-                this.emit('progress', torrentToInfo(torrent, status));
+                this._scheduleTransferProgress(torrent);
             }),
         );
 

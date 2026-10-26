@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
-import { mkdirSync, readFileSync } from 'fs';
+import { mkdir, readFile } from 'fs/promises';
 import { isAllowedRendererUrl, rendererSecurity } from './rendererSecurity';
 import { createSettingsManager } from './settingsManager';
 import { createTorrentEngine } from './torrentEngine';
@@ -27,7 +27,7 @@ import { getUpdateDisabledReason } from './updatePolicy';
 import ptBR from '../src/locales/pt-BR.json';
 import enUS from '../src/locales/en-US.json';
 
-import { createProtectedStore } from './protectedStore';
+import { createAsyncProtectedStoreAdapter } from './asyncProtectedStore';
 import { ProtectedStoreError } from './storeEncryption';
 
 // ─── Caminho de dados do usuário ──────────────────────────────────────────────
@@ -36,7 +36,6 @@ import { ProtectedStoreError } from './storeEncryption';
 // não se percam ao atualizar. Deve ser chamado antes de app.ready.
 {
     const legacyUserData = join(app.getPath('appData'), 'Meshy');
-    mkdirSync(legacyUserData, { recursive: true });
     app.setPath('userData', legacyUserData);
 }
 
@@ -82,13 +81,6 @@ process.on('uncaughtException', (error) => {
         logger.error('[CRASH] Falha ao persistir sessão:', String(persistError));
     }
 
-    // Persistir métricas para análise post-mortem
-    try {
-        metrics.persistSnapshot();
-    } catch {
-        // Falha silenciosa — não queremos erros ao persistir métricas
-    }
-
     // Exibir diálogo de erro para o usuário (se o app ainda estiver funcional)
     try {
         dialog.showErrorBox(
@@ -99,7 +91,19 @@ process.on('uncaughtException', (error) => {
         // Se o diálogo falhar, apenas encerrar
     }
 
-    app.exit(1);
+    const exitAfterPersistence = Promise.all([
+        downloadManager?.flushSessionPersistence() ?? Promise.resolve(),
+        metrics.persistSnapshot(),
+    ]);
+    if (exitAfterPersistence) {
+        void exitAfterPersistence
+            .catch((persistError) =>
+                logger.error('[CRASH] Falha ao concluir a persistência da sessão:', persistError),
+            )
+            .finally(() => app.exit(1));
+    } else {
+        app.exit(1);
+    }
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -114,12 +118,7 @@ process.on('unhandledRejection', (reason) => {
         logger.error('[CRASH] Falha ao persistir sessão:', String(persistError));
     }
 
-    // Persistir métricas para análise post-mortem
-    try {
-        metrics.persistSnapshot();
-    } catch {
-        // Falha silenciosa
-    }
+    void metrics.persistSnapshot();
 });
 
 // ─── Factory para criação de BrowserWindow ────────────────────────────────────
@@ -246,6 +245,7 @@ if (ownsInstance) externalTorrents.enqueueArguments(process.argv.slice(process.d
 app.whenReady()
     .then(async () => {
         if (!ownsInstance) return;
+        await mkdir(app.getPath('userData'), { recursive: true });
         // ── Habilitar persistência de métricas ─────────────────────────────────────
         try {
             const logsDir = app.getPath('logs');
@@ -267,11 +267,14 @@ app.whenReady()
             utpEnabled: settings.utpEnabled,
         });
 
-        // Shared electron-store instance for download session persistence
-        const downloadsStore = createProtectedStore({ name: 'downloads' });
+        // Session loading and writes use async safeStorage and filesystem APIs.
+        const downloadsStoreAdapter = await createAsyncProtectedStoreAdapter({
+            path: join(app.getPath('userData'), 'downloads.json'),
+        });
         const persistedStore = {
-            get: (key: string) => downloadsStore.get(key),
-            set: (key: string, value: unknown) => downloadsStore.set(key, value),
+            get: (key: string) => downloadsStoreAdapter.get(key),
+            set: (key: string, value: unknown) => downloadsStoreAdapter.set(key, value),
+            flush: () => downloadsStoreAdapter.flush(),
         } as import('./downloadManager').PersistedStore;
 
         const preparation = createTorrentPreparation({
@@ -293,6 +296,7 @@ app.whenReady()
                         preparation.cancel(requestId);
                     }
                 },
+                sessionPersistenceDelayMs: 250,
             },
         );
         const diskTimer = setInterval(() => {
@@ -336,7 +340,7 @@ app.whenReady()
         if (app.isPackaged && process.platform === 'win32') {
             try {
                 updateConfiguration = load(
-                    readFileSync(join(process.resourcesPath, 'app-update.yml'), 'utf8'),
+                    await readFile(join(process.resourcesPath, 'app-update.yml'), 'utf8'),
                     { schema: FAILSAFE_SCHEMA },
                 );
             } catch {
@@ -359,11 +363,12 @@ app.whenReady()
                         window.webContents.send('app:update-status', status);
                 }
             },
-            persistSession: () => {
+            persistSession: async () => {
                 if (downloadManager?.getAll().some((item) => item.fileOperation))
                     throw new Error('Operação de arquivos em andamento');
                 downloadManager?.persistSession();
-                metrics.persistSnapshot();
+                await downloadManager?.flushSessionPersistence();
+                await metrics.persistSnapshot();
             },
             confirmInstall: async () => {
                 const messages = settingsManager.get().locale === 'en-US' ? enUS : ptBR;
@@ -381,7 +386,26 @@ app.whenReady()
         });
 
         // ── Register before-quit handler to persist session ────────────────────────
-        app.on('before-quit', () => {
+        let quitAfterSessionFlush = false;
+        let sessionFlushComplete = false;
+        app.on('before-quit', (event) => {
+            if (!sessionFlushComplete) {
+                event.preventDefault();
+                if (quitAfterSessionFlush) return;
+                quitAfterSessionFlush = true;
+                void downloadManager
+                    ?.flushSessionPersistence()
+                    .catch((error) =>
+                        logger.error('[Main] Falha ao persistir sessão ao encerrar:', error),
+                    )
+                    .then(() => metrics.persistSnapshot())
+                    .finally(() => {
+                        sessionFlushComplete = true;
+                        app.quit();
+                    });
+                return;
+            }
+
             desktopReady = false;
             background?.dispose();
             bandwidth.dispose();
@@ -391,8 +415,6 @@ app.whenReady()
             clearInterval(diskTimer);
             preparation.dispose();
             updates.dispose();
-            downloadManager?.persistSession();
-            metrics.persistSnapshot();
             metrics.disablePersistence();
         });
 

@@ -115,12 +115,20 @@ export const DetailsPanel = React.memo(function DetailsPanel({
                         )}
                         {tab.id === 'peers' && (
                             <div data-testid="peers-tab-content">
-                                <PeersTab infoHash={infoHash} status={status} />
+                                <PeersTab
+                                    infoHash={infoHash}
+                                    status={status}
+                                    isActive={isExpanded && isActive}
+                                />
                             </div>
                         )}
                         {tab.id === 'pieces' && (
                             <div data-testid="pieces-tab-content">
-                                <PiecesTab infoHash={infoHash} status={status} />
+                                <PiecesTab
+                                    infoHash={infoHash}
+                                    status={status}
+                                    isActive={isExpanded && isActive}
+                                />
                             </div>
                         )}
                         {tab.id === 'speed' && (

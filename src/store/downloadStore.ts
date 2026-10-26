@@ -11,6 +11,19 @@ interface DownloadStore {
     removeItem(infoHash: string): void;
 }
 
+function itemsEqual(left: DownloadItem, right: DownloadItem): boolean {
+    const leftKeys = Object.keys(left) as (keyof DownloadItem)[];
+    const rightKeys = Object.keys(right) as (keyof DownloadItem)[];
+    return (
+        leftKeys.length === rightKeys.length &&
+        leftKeys.every(
+            (key) =>
+                Object.prototype.hasOwnProperty.call(right, key) &&
+                Object.is(left[key], right[key]),
+        )
+    );
+}
+
 // ─── Store implementation ─────────────────────────────────────────────────────
 
 export const useDownloadStore = create<DownloadStore>((set) => ({
@@ -36,24 +49,29 @@ export const useDownloadStore = create<DownloadStore>((set) => ({
      */
     mergeItems(incoming: DownloadItem[]): void {
         set((state) => {
-            const localMap = new Map<string, DownloadItem>();
-            for (const item of state.items) {
-                localMap.set(item.infoHash, item);
-            }
+            const localMap = new Map(state.items.map((item) => [item.infoHash, item]));
+            let unchanged = incoming.length === state.items.length;
 
-            const merged = incoming.map((remote) => {
+            const merged = incoming.map((remote, index) => {
                 const local = localMap.get(remote.infoHash);
-                if (!local) return remote;
+                if (!local) {
+                    unchanged = false;
+                    return remote;
+                }
 
                 // Preservar status local 'error' quando o main ainda reporta 'downloading'.
                 // O onError do renderer pode marcar como error antes do próximo snapshot.
-                if (local.status === 'error' && remote.status === 'downloading') {
-                    return { ...remote, status: local.status } as DownloadItem;
-                }
+                const reconciled =
+                    local.status === 'error' && remote.status === 'downloading'
+                        ? { ...remote, status: local.status }
+                        : remote;
+                const item = itemsEqual(local, reconciled) ? local : reconciled;
 
-                return remote;
+                if (item !== local || state.items[index] !== local) unchanged = false;
+                return item;
             });
 
+            if (unchanged) return state;
             return { items: merged };
         });
     },

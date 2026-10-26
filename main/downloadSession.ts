@@ -18,11 +18,12 @@ export interface PersistedStore {
     get(key: 'downloadsSchemaVersion'): number | undefined;
     set(key: 'downloads', value: PersistedDownloadItem[]): void;
     set(key: 'downloadsSchemaVersion', value: number): void;
+    flush?(): Promise<void>;
 }
 
 export interface DownloadSessionRepository {
     read(): unknown[];
-    write(items: PersistedDownloadItem[], queueOrder: readonly string[]): void;
+    write(items: PersistedDownloadItem[], queueOrder: readonly string[]): void | Promise<void>;
 }
 
 export type PersistedDownloadValidationReason =
@@ -237,7 +238,7 @@ export function createDownloadSessionRepository(
             return downloads;
         },
 
-        write(items: PersistedDownloadItem[], queueOrder: readonly string[]): void {
+        write(items: PersistedDownloadItem[], queueOrder: readonly string[]): void | Promise<void> {
             const queuedItems = items.filter((item) => item.status === 'queued');
             const nonQueuedItems = items.filter((item) => item.status !== 'queued');
 
@@ -247,6 +248,7 @@ export function createDownloadSessionRepository(
 
             store.set('downloads', [...nonQueuedItems, ...queuedItems]);
             store.set('downloadsSchemaVersion', DOWNLOADS_SCHEMA_VERSION);
+            return store.flush?.();
         },
     };
 }

@@ -127,6 +127,12 @@ const arbShellError = fc.string({ minLength: 1, maxLength: 100 });
 jest.mock('fs/promises', () => ({
     realpath: jest.fn(async (folder: string) => require('path').resolve(folder)),
     lstat: jest.fn(async () => ({ isSymbolicLink: () => false })),
+    stat: jest.fn(async (path: string) => {
+        if (!jest.requireMock('fs').existsSync(path))
+            throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return { isDirectory: () => true };
+    }),
+    access: jest.fn(async () => undefined),
 }));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -2,6 +2,14 @@ import log from 'electron-log';
 import { redactLogValue, redactSensitiveText } from './logRedaction';
 import { getOperationContext } from './operationContext';
 
+// FileTransport é síncrono por padrão e consulta tamanho/rotação em cada log.
+// Desabilitamos a rotação interna para evitar stat/rename síncronos no processo principal.
+const fileTransport = log?.transports?.file;
+if (fileTransport) {
+    fileTransport.sync = false;
+    fileTransport.maxSize = 0;
+}
+
 // ─── Logger ───────────────────────────────────────────────────────────────────
 //
 // Wrapper around electron-log for the main process com suporte a contexto

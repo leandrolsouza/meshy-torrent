@@ -46,6 +46,19 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(), // não lança = tem permissão W_OK
 }));
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    access: jest.fn(async (path: string) => {
+        jest.requireMock('fs').accessSync(path);
+    }),
+    stat: jest.fn(async (path: string) => {
+        if (!jest.requireMock('fs').existsSync(path)) {
+            throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        }
+        return { isDirectory: () => true };
+    }),
+}));
+
 const mockFs = require('fs') as {
     existsSync: jest.Mock;
     accessSync: jest.Mock;

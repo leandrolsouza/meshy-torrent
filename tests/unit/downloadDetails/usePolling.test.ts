@@ -32,10 +32,13 @@ describe('usePolling', () => {
             expect(fn).toHaveBeenCalledTimes(1);
         });
 
-        it('executa a função periodicamente no intervalo especificado', () => {
+        it('executa a função periodicamente no intervalo especificado', async () => {
             const fn = jest.fn().mockResolvedValue(undefined);
 
             renderHook(() => usePolling(fn, 2000, true));
+            await act(async () => {
+                await Promise.resolve();
+            });
 
             // Chamada inicial
             expect(fn).toHaveBeenCalledTimes(1);
@@ -45,12 +48,46 @@ describe('usePolling', () => {
                 jest.advanceTimersByTime(2000);
             });
             expect(fn).toHaveBeenCalledTimes(2);
+            await act(async () => {
+                await Promise.resolve();
+            });
 
             // Avança mais 2 segundos
             act(() => {
                 jest.advanceTimersByTime(2000);
             });
             expect(fn).toHaveBeenCalledTimes(3);
+        });
+
+        it('não inicia outra chamada enquanto a anterior está pendente', async () => {
+            let resolveFirst!: () => void;
+            const fn = jest
+                .fn<Promise<void>, []>()
+                .mockImplementationOnce(
+                    () =>
+                        new Promise<void>((resolve) => {
+                            resolveFirst = resolve;
+                        }),
+                )
+                .mockResolvedValue(undefined);
+
+            renderHook(() => usePolling(fn, 2000, true));
+            expect(fn).toHaveBeenCalledTimes(1);
+
+            act(() => {
+                jest.advanceTimersByTime(6000);
+            });
+            expect(fn).toHaveBeenCalledTimes(1);
+
+            await act(async () => {
+                resolveFirst();
+                await Promise.resolve();
+            });
+
+            act(() => {
+                jest.advanceTimersByTime(2000);
+            });
+            expect(fn).toHaveBeenCalledTimes(2);
         });
 
         it('limpa o intervalo ao desmontar', () => {
@@ -88,13 +125,12 @@ describe('usePolling', () => {
     });
 
     describe('transição de enabled', () => {
-        it('inicia polling quando enabled muda de false para true', () => {
+        it('inicia polling quando enabled muda de false para true', async () => {
             const fn = jest.fn().mockResolvedValue(undefined);
 
-            const { rerender } = renderHook(
-                ({ enabled }) => usePolling(fn, 2000, enabled),
-                { initialProps: { enabled: false } },
-            );
+            const { rerender } = renderHook(({ enabled }) => usePolling(fn, 2000, enabled), {
+                initialProps: { enabled: false },
+            });
 
             expect(fn).not.toHaveBeenCalled();
 
@@ -102,6 +138,9 @@ describe('usePolling', () => {
 
             // Chamada inicial imediata
             expect(fn).toHaveBeenCalledTimes(1);
+            await act(async () => {
+                await Promise.resolve();
+            });
 
             act(() => {
                 jest.advanceTimersByTime(2000);
@@ -112,10 +151,9 @@ describe('usePolling', () => {
         it('para polling quando enabled muda de true para false', () => {
             const fn = jest.fn().mockResolvedValue(undefined);
 
-            const { rerender } = renderHook(
-                ({ enabled }) => usePolling(fn, 2000, enabled),
-                { initialProps: { enabled: true } },
-            );
+            const { rerender } = renderHook(({ enabled }) => usePolling(fn, 2000, enabled), {
+                initialProps: { enabled: true },
+            });
 
             // Chamada inicial
             expect(fn).toHaveBeenCalledTimes(1);
@@ -132,18 +170,20 @@ describe('usePolling', () => {
     });
 
     describe('referência estável da função', () => {
-        it('usa a versão mais recente da função via ref', () => {
+        it('usa a versão mais recente da função via ref', async () => {
             const fn1 = jest.fn().mockResolvedValue(undefined);
             const fn2 = jest.fn().mockResolvedValue(undefined);
 
-            const { rerender } = renderHook(
-                ({ fn }) => usePolling(fn, 2000, true),
-                { initialProps: { fn: fn1 } },
-            );
+            const { rerender } = renderHook(({ fn }) => usePolling(fn, 2000, true), {
+                initialProps: { fn: fn1 },
+            });
 
             // Chamada inicial com fn1
             expect(fn1).toHaveBeenCalledTimes(1);
             expect(fn2).not.toHaveBeenCalled();
+            await act(async () => {
+                await Promise.resolve();
+            });
 
             // Atualiza a função sem reiniciar o intervalo
             rerender({ fn: fn2 });
@@ -158,20 +198,25 @@ describe('usePolling', () => {
     });
 
     describe('mudança de intervalo', () => {
-        it('reinicia o intervalo quando intervalMs muda', () => {
+        it('reinicia o intervalo quando intervalMs muda', async () => {
             const fn = jest.fn().mockResolvedValue(undefined);
 
-            const { rerender } = renderHook(
-                ({ intervalMs }) => usePolling(fn, intervalMs, true),
-                { initialProps: { intervalMs: 2000 } },
-            );
+            const { rerender } = renderHook(({ intervalMs }) => usePolling(fn, intervalMs, true), {
+                initialProps: { intervalMs: 2000 },
+            });
 
             // Chamada inicial
             expect(fn).toHaveBeenCalledTimes(1);
+            await act(async () => {
+                await Promise.resolve();
+            });
 
             // Muda intervalo para 1000ms — deve executar chamada inicial novamente
             rerender({ intervalMs: 1000 });
             expect(fn).toHaveBeenCalledTimes(2);
+            await act(async () => {
+                await Promise.resolve();
+            });
 
             act(() => {
                 jest.advanceTimersByTime(1000);

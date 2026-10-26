@@ -1875,6 +1875,10 @@ describe('TorrentEngine.getPieces() — cobertura de caminhos ausentes', () => {
 // ─── _attachTorrentListeners — eventos done, error, download, upload ──────────
 
 describe('TorrentEngine._attachTorrentListeners — eventos de torrent (via addMagnetLink)', () => {
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
     it('marca status seeding e emite done sem parar a rede', async () => {
         const infoHash = 'b8'.repeat(20);
         const magnetURI = `magnet:?xt=urn:btih:${infoHash}`;
@@ -1935,6 +1939,7 @@ describe('TorrentEngine._attachTorrentListeners — eventos de torrent (via addM
     });
 
     it('emite "progress" no engine quando torrent dispara "download"', async () => {
+        jest.useFakeTimers();
         const infoHash = 'c1'.repeat(20);
         const magnetURI = `magnet:?xt=urn:btih:${infoHash}`;
         const fakeTorrent = makeEventTorrent(infoHash);
@@ -1947,11 +1952,13 @@ describe('TorrentEngine._attachTorrentListeners — eventos de torrent (via addM
         engine.on('progress', (info) => progressEvents.push(info));
 
         (fakeTorrent as unknown as EventEmitter).emit('download');
+        await jest.advanceTimersByTimeAsync(200);
 
         expect(progressEvents).toHaveLength(1);
     });
 
     it('emite "progress" no engine quando torrent dispara "upload"', async () => {
+        jest.useFakeTimers();
         const infoHash = 'c2'.repeat(20);
         const magnetURI = `magnet:?xt=urn:btih:${infoHash}`;
         const fakeTorrent = makeEventTorrent(infoHash);
@@ -1964,8 +1971,37 @@ describe('TorrentEngine._attachTorrentListeners — eventos de torrent (via addM
         engine.on('progress', (info) => progressEvents.push(info));
 
         (fakeTorrent as unknown as EventEmitter).emit('upload');
+        await jest.advanceTimersByTimeAsync(200);
 
         expect(progressEvents).toHaveLength(1);
+    });
+
+    it('agrupa eventos frequentes de download e upload em um snapshot por intervalo', async () => {
+        jest.useFakeTimers();
+        const infoHash = 'c3'.repeat(20);
+        const magnetURI = `magnet:?xt=urn:btih:${infoHash}`;
+        const fakeTorrent = makeEventTorrent(infoHash);
+        const client = makeClientForAddMagnet(fakeTorrent);
+        const engine = createTorrentEngine(DEFAULT_OPTIONS, client);
+
+        await engine.addMagnetLink(magnetURI);
+
+        const progressEvents: unknown[] = [];
+        engine.on('progress', (info) => progressEvents.push(info));
+
+        const torrentEvents = fakeTorrent as unknown as EventEmitter;
+        for (let i = 0; i < 20; i++) {
+            torrentEvents.emit('download', 16_384);
+            torrentEvents.emit('upload', 1_024);
+        }
+
+        expect(progressEvents).toHaveLength(0);
+        await jest.advanceTimersByTimeAsync(200);
+        expect(progressEvents).toHaveLength(1);
+
+        torrentEvents.emit('download', 16_384);
+        await jest.advanceTimersByTimeAsync(200);
+        expect(progressEvents).toHaveLength(2);
     });
 });
 

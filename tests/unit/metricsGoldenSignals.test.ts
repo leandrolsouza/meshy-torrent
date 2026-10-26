@@ -170,24 +170,25 @@ test('uptime independe de ajustes da data do sistema', () => {
     expect(collector.getSnapshot()).toMatchObject({ startedAt: 1000, uptimeMs: 200 });
 });
 
-test('snapshots persistidos incluem séries e distribuições; reativar persistência não duplica timers', () => {
+test('snapshots persistidos incluem séries e distribuições; reativar persistência não duplica timers', async () => {
     jest.useFakeTimers();
-    const write = jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+    const logsDir = fs.mkdtempSync(`${process.env['TEMP'] ?? '/tmp'}/metrics-test-`);
     const collector = createMetricsCollector();
     try {
-        collector.enablePersistence('/synthetic-observability-fixture');
-        collector.enablePersistence('/synthetic-observability-fixture');
+        collector.enablePersistence(logsDir);
+        collector.enablePersistence(logsDir);
         expect(jest.getTimerCount()).toBe(1);
         collector.recordTransfer('upload', 42);
         collector.recordOperationalSample(gauges());
-        collector.persistSnapshot();
-        const entry = JSON.parse(write.mock.calls[write.mock.calls.length - 1]![1] as string);
-        expect(entry.snapshot.traffic.uploadedBytes).toBe(42);
-        expect(entry.snapshot.series).toHaveLength(1);
-        expect(entry.snapshot.latency.queueWaitMs.p99Ms).toBeNull();
+        await collector.persistSnapshot();
+        const [entry] = await collector.readPersistedSnapshots();
+        expect(entry).toBeDefined();
+        expect(entry!.snapshot.traffic.uploadedBytes).toBe(42);
+        expect(entry!.snapshot.series).toHaveLength(1);
+        expect(entry!.snapshot.latency.queueWaitMs.p99Ms).toBeNull();
     } finally {
         collector.disablePersistence();
-        write.mockRestore();
+        fs.rmSync(logsDir, { recursive: true, force: true });
         expect(jest.getTimerCount()).toBe(0);
         jest.useRealTimers();
     }

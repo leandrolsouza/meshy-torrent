@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { DetailsPanel, isExpandable } from '../../../src/components/DownloadDetails/DetailsPanel';
 
@@ -32,9 +32,7 @@ describe('DetailsPanel', () => {
     });
 
     it('renderiza o painel expandido quando isExpanded é true', () => {
-        const { container } = render(
-            <DetailsPanel {...defaultProps} isExpanded={true} />,
-        );
+        const { container } = render(<DetailsPanel {...defaultProps} isExpanded={true} />);
         const panel = container.querySelector('[data-testid="details-panel"]');
         expect(panel).toHaveClass('panelExpanded');
         expect(panel).not.toHaveClass('panelCollapsed');
@@ -63,9 +61,7 @@ describe('DetailsPanel', () => {
     });
 
     it('painéis inativos estão ocultos via CSS (classe tabPanelHidden)', () => {
-        const { container } = render(
-            <DetailsPanel {...defaultProps} isExpanded={true} />,
-        );
+        const { container } = render(<DetailsPanel {...defaultProps} isExpanded={true} />);
         const panels = container.querySelectorAll('[role="tabpanel"]');
         // Apenas o painel "Geral" (primeiro) deve estar visível
         expect(panels[0]).not.toHaveClass('tabPanelHidden');
@@ -74,10 +70,33 @@ describe('DetailsPanel', () => {
         expect(panels[3]).toHaveClass('tabPanelHidden');
     });
 
+    it('consulta peers e peças apenas enquanto cada aba está visível', async () => {
+        const getPeers = jest.fn().mockResolvedValue({ success: true, data: [] });
+        const getPieces = jest.fn().mockResolvedValue({ success: true, data: [] });
+        Object.defineProperty(window, 'meshy', {
+            configurable: true,
+            value: {
+                getMetadata: jest.fn().mockResolvedValue({ success: true, data: {} }),
+                getPeers,
+                getPieces,
+            },
+        });
+
+        render(<DetailsPanel {...defaultProps} isExpanded={true} />);
+        expect(getPeers).not.toHaveBeenCalled();
+        expect(getPieces).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Peers' }));
+        await waitFor(() => expect(getPeers).toHaveBeenCalledTimes(1));
+        expect(getPieces).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Peças' }));
+        await waitFor(() => expect(getPieces).toHaveBeenCalledTimes(1));
+        expect(getPeers).toHaveBeenCalledTimes(1);
+    });
+
     it('reseta aba para "Geral" ao expandir novamente', () => {
-        const { rerender } = render(
-            <DetailsPanel {...defaultProps} isExpanded={true} />,
-        );
+        const { rerender } = render(<DetailsPanel {...defaultProps} isExpanded={true} />);
 
         // Simula colapso
         rerender(<DetailsPanel {...defaultProps} isExpanded={false} />);
@@ -92,11 +111,7 @@ describe('DetailsPanel', () => {
     it('auto-colapsa quando status muda para "resolving-metadata"', () => {
         const onToggle = jest.fn();
         const { rerender } = render(
-            <DetailsPanel
-                {...defaultProps}
-                isExpanded={true}
-                onToggle={onToggle}
-            />,
+            <DetailsPanel {...defaultProps} isExpanded={true} onToggle={onToggle} />,
         );
 
         // Transiciona para status não-expansível
@@ -115,11 +130,7 @@ describe('DetailsPanel', () => {
     it('auto-colapsa quando status muda para "queued"', () => {
         const onToggle = jest.fn();
         const { rerender } = render(
-            <DetailsPanel
-                {...defaultProps}
-                isExpanded={true}
-                onToggle={onToggle}
-            />,
+            <DetailsPanel {...defaultProps} isExpanded={true} onToggle={onToggle} />,
         );
 
         // Transiciona para status não-expansível
@@ -138,11 +149,7 @@ describe('DetailsPanel', () => {
     it('não auto-colapsa quando status é válido para expansão', () => {
         const onToggle = jest.fn();
         const { rerender } = render(
-            <DetailsPanel
-                {...defaultProps}
-                isExpanded={true}
-                onToggle={onToggle}
-            />,
+            <DetailsPanel {...defaultProps} isExpanded={true} onToggle={onToggle} />,
         );
 
         rerender(
@@ -159,31 +166,13 @@ describe('DetailsPanel', () => {
 
     it('tabpanels possuem aria-labelledby correto', () => {
         const infoHash = 'b'.repeat(40);
-        render(
-            <DetailsPanel
-                {...defaultProps}
-                infoHash={infoHash}
-                isExpanded={true}
-            />,
-        );
+        render(<DetailsPanel {...defaultProps} infoHash={infoHash} isExpanded={true} />);
 
         const panels = screen.getAllByRole('tabpanel');
-        expect(panels[0]).toHaveAttribute(
-            'aria-labelledby',
-            `details-${infoHash}-tab-general`,
-        );
-        expect(panels[1]).toHaveAttribute(
-            'aria-labelledby',
-            `details-${infoHash}-tab-peers`,
-        );
-        expect(panels[2]).toHaveAttribute(
-            'aria-labelledby',
-            `details-${infoHash}-tab-pieces`,
-        );
-        expect(panels[3]).toHaveAttribute(
-            'aria-labelledby',
-            `details-${infoHash}-tab-speed`,
-        );
+        expect(panels[0]).toHaveAttribute('aria-labelledby', `details-${infoHash}-tab-general`);
+        expect(panels[1]).toHaveAttribute('aria-labelledby', `details-${infoHash}-tab-peers`);
+        expect(panels[2]).toHaveAttribute('aria-labelledby', `details-${infoHash}-tab-pieces`);
+        expect(panels[3]).toHaveAttribute('aria-labelledby', `details-${infoHash}-tab-speed`);
     });
 });
 

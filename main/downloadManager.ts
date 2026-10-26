@@ -2,7 +2,8 @@ import { getOperationContext, runWithOperationContext } from './operationContext
 import type { OperationContext } from './operationContext';
 import { traceOperation } from './tracing';
 import { EventEmitter } from 'events';
-import { existsSync, accessSync, constants as fsConstants } from 'fs';
+import { access, stat } from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import type { TorrentInfo } from './torrentEngine';
 import type { DownloadManagerEngine } from './enginePorts';
 import type { SettingsManager } from './settingsManager';
@@ -74,6 +75,7 @@ export interface DownloadManager {
     setFileSelection(infoHash: string, selectedIndices: number[]): TorrentFileInfo[];
     restoreSession(): Promise<void>;
     persistSession(): void;
+    flushSessionPersistence(): Promise<void>;
     /** Atualiza o limite de downloads simultâneos e processa a fila */
     setMaxConcurrentDownloads(max: number): void;
     /** Retenta um download que está em status 'error' ou 'metadata-failed' */
@@ -133,12 +135,11 @@ const ORPHAN_CLEANUP_INTERVAL_MS = 5 * 60 * 1_000;
  * Validates that the given folder path exists and is writable.
  * Throws an Error with a descriptive message if validation fails.
  */
-function validateDestinationFolder(folderPath: string): void {
-    if (!existsSync(folderPath)) {
-        throw new Error('Pasta inválida ou sem permissão de escrita');
-    }
+async function validateDestinationFolder(folderPath: string): Promise<void> {
     try {
-        accessSync(folderPath, fsConstants.W_OK);
+        const details = await stat(folderPath);
+        if (!details.isDirectory()) throw new Error('Pasta inválida ou sem permissão de escrita');
+        await access(folderPath, fsConstants.W_OK);
     } catch {
         throw new Error('Pasta inválida ou sem permissão de escrita');
     }
@@ -176,6 +177,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     private readonly sessionRepository: DownloadSessionRepository | undefined;
     /** Bloqueia snapshots parciais durante a restauração e após uma falha inesperada. */
     private sessionPersistenceBlocked = false;
+    private readonly sessionPersistenceDelayMs: number;
+    private sessionPersistencePending = false;
+    private sessionPersistenceTimer: ReturnType<typeof setTimeout> | null = null;
+    private sessionFlushPromise: Promise<void> | null = null;
     private readonly log: Logger;
     private readonly diskSpace: DiskSpaceService | undefined;
     private admission: Promise<unknown> = Promise.resolve();
@@ -200,6 +205,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             diskSpace?: DiskSpaceService;
             torrentFiles?: TorrentFilesService;
             recoverMetadata?: (magnetUri: string) => Promise<PreparedTorrent>;
+            sessionPersistenceDelayMs?: number;
         },
     ) {
         super();
@@ -215,6 +221,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             ? createDownloadSessionRepository(store, this.log)
             : undefined;
         this.diskSpace = options?.diskSpace;
+        this.sessionPersistenceDelayMs = Math.max(0, options?.sessionPersistenceDelayMs ?? 0);
         this.maxConcurrent =
             settings.get().maxConcurrentDownloads ?? DEFAULT_MAX_CONCURRENT_DOWNLOADS;
 
@@ -477,7 +484,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                     )
                 )
                     throw new Error(ErrorCodes.FILE_INDEX_INVALID);
-                validateDestinationFolder(destinationFolder);
+                await validateDestinationFolder(destinationFolder);
                 const indices = [...new Set(selectedIndices)];
                 const selectedBytes = preview.files
                     .filter((file) => indices.includes(file.index))
@@ -824,7 +831,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
 
     async addTorrentFile(filePath: string): Promise<DownloadItem> {
         const destinationFolder = this.settings.get().destinationFolder;
-        validateDestinationFolder(destinationFolder);
+        await validateDestinationFolder(destinationFolder);
 
         const hasSlot = this._activeCount() < this.maxConcurrent;
         if (hasSlot) this.pendingAdds++;
@@ -876,7 +883,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
 
     async addTorrentBuffer(buffer: Buffer): Promise<DownloadItem> {
         const destinationFolder = this.settings.get().destinationFolder;
-        validateDestinationFolder(destinationFolder);
+        await validateDestinationFolder(destinationFolder);
 
         const hasSlot = this._activeCount() < this.maxConcurrent;
         if (hasSlot) this.pendingAdds++;
@@ -929,7 +936,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     async addMagnetLink(magnetUri: string): Promise<DownloadItem> {
         // Validate destination folder before starting the transfer
         const destinationFolder = this.settings.get().destinationFolder;
-        validateDestinationFolder(destinationFolder);
+        await validateDestinationFolder(destinationFolder);
 
         // Extract infoHash from magnet URI for early duplicate detection
         const hashMatch = magnetUri.match(/xt=urn:btih:([a-fA-F0-9]{40})/i);
@@ -1154,7 +1161,11 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                             item.fileOperation
                         )
                             return;
-                        if (!existsSync(item.destinationFolder)) {
+                        if (
+                            !(await stat(item.destinationFolder)
+                                .then(() => true)
+                                .catch(() => false))
+                        ) {
                             const missing: DownloadItem = { ...item, status: 'files-not-found' };
                             this.items.set(item.infoHash, missing);
                             this.emit('update', missing);
@@ -1811,7 +1822,9 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
                     creationDate: persistedItem.creationDate ?? null,
                 });
             }
-            const folderExists = existsSync(persistedItem.destinationFolder);
+            const folderExists = await stat(persistedItem.destinationFolder)
+                .then(() => true)
+                .catch(() => false);
 
             let status: TorrentStatus =
                 persistedItem.status === 'seeding' ? 'completed' : persistedItem.status;
@@ -2008,6 +2021,69 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             return;
         }
 
+        if (this.sessionPersistenceDelayMs > 0) {
+            this.sessionPersistencePending = true;
+            if (this.sessionPersistenceTimer !== null) return;
+            this.sessionPersistenceTimer = setTimeout(() => {
+                this.sessionPersistenceTimer = null;
+                void this.flushSessionPersistence().catch((error) =>
+                    this.log.warn('[DownloadManager] Falha ao persistir a sessão:', error),
+                );
+            }, this.sessionPersistenceDelayMs);
+            this.sessionPersistenceTimer.unref();
+            return;
+        }
+
+        const write = this._writeSessionSnapshot();
+        if (write) {
+            void write.catch((error) =>
+                this.log.warn('[DownloadManager] Falha ao persistir a sessão:', error),
+            );
+        }
+    }
+
+    async flushSessionPersistence(): Promise<void> {
+        if (this.sessionPersistenceTimer !== null) {
+            clearTimeout(this.sessionPersistenceTimer);
+            this.sessionPersistenceTimer = null;
+        }
+
+        if (this.sessionFlushPromise) {
+            await this.sessionFlushPromise;
+            if (this.sessionPersistencePending) await this.flushSessionPersistence();
+            return;
+        }
+
+        if (!this.sessionPersistencePending) return;
+        this.sessionPersistencePending = false;
+
+        let write: void | Promise<void>;
+        try {
+            write = this._writeSessionSnapshot();
+        } catch (error) {
+            this.sessionPersistencePending = true;
+            throw error;
+        }
+
+        if (write) {
+            const flush = write.finally(() => {
+                if (this.sessionFlushPromise === flush) this.sessionFlushPromise = null;
+            });
+            this.sessionFlushPromise = flush;
+            try {
+                await flush;
+            } catch (error) {
+                this.sessionPersistencePending = true;
+                throw error;
+            }
+        }
+
+        if (this.sessionPersistencePending) await this.flushSessionPersistence();
+    }
+
+    private _writeSessionSnapshot(): void | Promise<void> {
+        if (!this.sessionRepository) return;
+
         const items = Array.from(this.items.values());
         const persisted: PersistedDownloadItem[] = items.map((item) => {
             const files = this.getFiles(item.infoHash);
@@ -2034,7 +2110,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
             });
         });
 
-        this.sessionRepository.write(persisted, this.queue);
+        return this.sessionRepository.write(persisted, this.queue);
     }
 
     // ── setMaxConcurrentDownloads ───────────────────────────────────────────────
@@ -2467,6 +2543,7 @@ export function createDownloadManager(
         diskSpace?: DiskSpaceService;
         torrentFiles?: TorrentFilesService;
         recoverMetadata?: (magnetUri: string) => Promise<PreparedTorrent>;
+        sessionPersistenceDelayMs?: number;
     },
 ): DownloadManager {
     return new DownloadManagerImpl(engine, settings, store, log, options);

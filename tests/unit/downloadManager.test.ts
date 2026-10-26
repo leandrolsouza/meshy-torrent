@@ -27,6 +27,19 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(),
 }));
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    access: jest.fn(async (path: string) => {
+        jest.requireMock('fs').accessSync(path);
+    }),
+    stat: jest.fn(async (path: string) => {
+        if (!jest.requireMock('fs').existsSync(path)) {
+            throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        }
+        return { isDirectory: () => true };
+    }),
+}));
+
 const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
 const mockAccessSync = accessSync as jest.MockedFunction<typeof accessSync>;
 
@@ -1056,6 +1069,10 @@ describe('DownloadManager — restoreSession()', () => {
 });
 
 describe('DownloadManager — persistSession()', () => {
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
     beforeEach(() => {
         jest.clearAllMocks();
         // Folder validation: simulate valid (existing + writable) folder
@@ -1086,6 +1103,54 @@ describe('DownloadManager — persistSession()', () => {
                 }),
             ]),
         );
+    });
+
+    it('defers and coalesces session snapshots when asynchronous persistence is enabled', async () => {
+        jest.useFakeTimers();
+        const engine = makeMockEngine();
+        const store = makeMockStore();
+        const manager = createDownloadManager(engine, makeMockSettings(), store, undefined, {
+            sessionPersistenceDelayMs: 250,
+        });
+
+        await manager.addMagnetLink(VALID_MAGNET);
+        jest.clearAllMocks();
+
+        manager.persistSession();
+        manager.persistSession();
+        manager.persistSession();
+
+        expect(engine.getFiles).not.toHaveBeenCalled();
+        expect(store.set).not.toHaveBeenCalled();
+
+        await manager.flushSessionPersistence();
+
+        expect(engine.getFiles).toHaveBeenCalledTimes(1);
+        expect(store.set).toHaveBeenCalledTimes(2);
+        expect(store.set).toHaveBeenCalledWith(
+            'downloads',
+            expect.arrayContaining([expect.objectContaining({ infoHash: INFO_HASH })]),
+        );
+    });
+
+    it('keeps a failed asynchronous snapshot pending so shutdown can retry it', async () => {
+        const engine = makeMockEngine();
+        const store = makeMockStore() as PersistedStore & { flush: jest.Mock };
+        store.flush = jest.fn();
+        const manager = createDownloadManager(engine, makeMockSettings(), store, undefined, {
+            sessionPersistenceDelayMs: 250,
+        });
+
+        await manager.addMagnetLink(VALID_MAGNET);
+        jest.clearAllMocks();
+        store.flush.mockRejectedValueOnce(new Error('disco indisponível'));
+        manager.persistSession();
+
+        await expect(manager.flushSessionPersistence()).rejects.toThrow('disco indisponível');
+
+        store.flush.mockResolvedValue(undefined);
+        await expect(manager.flushSessionPersistence()).resolves.toBeUndefined();
+        expect(store.flush).toHaveBeenCalledTimes(2);
     });
 
     it('saves an empty array when there are no items', () => {

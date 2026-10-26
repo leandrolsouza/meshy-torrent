@@ -34,6 +34,44 @@ function makeManager(storeData: Record<string, unknown> = {}) {
 // ─── get() ────────────────────────────────────────────────────────────────────
 
 describe('SettingsManager.get()', () => {
+    it('lê o arquivo uma vez e atende consultas seguintes pelo snapshot em memória', () => {
+        const values: Record<string, unknown> = {
+            destinationFolder: '/downloads',
+            schemaVersion: 1,
+            downloadSpeedLimit: 128,
+            globalTrackers: ['udp://tracker.example.com:6969/announce'],
+        };
+        let diskReads = 0;
+        let wholeStoreReads = 0;
+        const store: SettingsStore = {
+            get: (key) => {
+                diskReads++;
+                return values[key] as never;
+            },
+            set: (key, value) => {
+                values[key] = value;
+            },
+            setMany: (updates) => Object.assign(values, updates),
+            getAll: () => {
+                wholeStoreReads++;
+                return { ...values };
+            },
+        };
+        const manager = createSettingsManager({
+            store,
+            getDownloadsPath: () => FAKE_DOWNLOADS_PATH,
+        });
+
+        expect(wholeStoreReads).toBe(1);
+        expect(diskReads).toBe(0);
+        for (let index = 0; index < 20; index++) manager.get();
+        expect(diskReads).toBe(0);
+
+        manager.set({ downloadSpeedLimit: 512 });
+        expect(manager.get().downloadSpeedLimit).toBe(512);
+        expect(diskReads).toBe(0);
+    });
+
     it('sessões antigas usam fechar normalmente; preferência de bandeja pode ser persistida', () => {
         const manager = makeManager();
         expect(manager.get().closeToTray).toBe(false);
@@ -548,6 +586,7 @@ import { EventEmitter } from 'events';
 import { createDownloadManager } from '../../main/downloadManager';
 import type { TorrentEngine, TorrentInfo, TorrentStatus } from '../../main/torrentEngine';
 import { existsSync, accessSync } from 'fs';
+import { stat, access } from 'fs/promises';
 
 jest.mock('fs', () => ({
     ...jest.requireActual('fs'),
@@ -555,8 +594,16 @@ jest.mock('fs', () => ({
     accessSync: jest.fn(),
 }));
 
+jest.mock('fs/promises', () => ({
+    ...jest.requireActual('fs/promises'),
+    stat: jest.fn(),
+    access: jest.fn(),
+}));
+
 const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
 const mockAccessSync = accessSync as jest.MockedFunction<typeof accessSync>;
+const mockStat = stat as jest.MockedFunction<typeof stat>;
+const mockAccess = access as jest.MockedFunction<typeof access>;
 
 function makeMockTorrentInfo(infoHash: string): TorrentInfo {
     return {
@@ -626,6 +673,8 @@ describe('Property 11: Novos downloads usam a pasta de destino atual', () => {
         // Folder validation: simulate valid (existing + writable) folder
         mockExistsSync.mockReturnValue(true);
         mockAccessSync.mockReturnValue(undefined);
+        mockStat.mockResolvedValue({ isDirectory: () => true } as any);
+        mockAccess.mockResolvedValue(undefined);
     });
     afterEach(() => {
         jest.useRealTimers();
@@ -647,10 +696,10 @@ describe('Property 11: Novos downloads usam a pasta de destino atual', () => {
                     const magnetUri = `magnet:?xt=urn:btih:${infoHash}`;
 
                     const silentLogger = {
-                        info: () => {},
-                        warn: () => {},
-                        error: () => {},
-                        debug: () => {},
+                        info: () => { },
+                        warn: () => { },
+                        error: () => { },
+                        debug: () => { },
                     };
 
                     const downloadManager = createDownloadManager(
@@ -699,12 +748,21 @@ describe('Property 12: Pasta inválida resulta em erro antes de iniciar download
                     if (failureMode === 'non-existent') {
                         mockExistsSync.mockReturnValue(false);
                         mockAccessSync.mockReturnValue(undefined);
+                        mockStat.mockRejectedValue(
+                            Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
+                        );
                     } else {
                         // Folder exists but is not writable
                         mockExistsSync.mockReturnValue(true);
                         mockAccessSync.mockImplementation(() => {
                             throw new Error('EACCES: permission denied');
                         });
+                        mockStat.mockResolvedValue({ isDirectory: () => true } as any);
+                        mockAccess.mockRejectedValue(
+                            Object.assign(new Error('EACCES: permission denied'), {
+                                code: 'EACCES',
+                            }),
+                        );
                     }
 
                     const settingsManager = makeManager();
@@ -715,10 +773,10 @@ describe('Property 12: Pasta inválida resulta em erro antes de iniciar download
                     const magnetUri = `magnet:?xt=urn:btih:${infoHash}`;
 
                     const silentLogger = {
-                        info: () => {},
-                        warn: () => {},
-                        error: () => {},
-                        debug: () => {},
+                        info: () => { },
+                        warn: () => { },
+                        error: () => { },
+                        debug: () => { },
                     };
 
                     const downloadManager = createDownloadManager(

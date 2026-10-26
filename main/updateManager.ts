@@ -22,7 +22,7 @@ export function createUpdateManager(options: {
     currentVersion: string;
     disabledReason: UpdateDisabledReason | undefined;
     publish: (status: AppUpdateStatus) => void;
-    persistSession: () => void;
+    persistSession: () => void | Promise<void>;
     confirmInstall: () => Promise<boolean>;
     setQuitting: (value: boolean) => void;
 }) {
@@ -138,7 +138,7 @@ export function createUpdateManager(options: {
                 if (status.phase !== 'downloaded') throw new Error(ErrorCodes.UPDATE_NOT_READY);
                 // Erro de persistência deve impedir a atualização e permitir nova tentativa.
                 try {
-                    options.persistSession();
+                    await options.persistSession();
                 } catch {
                     throw new Error(ErrorCodes.UPDATE_SESSION_FAILED);
                 }

@@ -156,6 +156,39 @@ describe('downloadStore', () => {
             expect(item.downloadSpeed).toBe(500);
         });
 
+        it('preserva referências e não notifica quando o snapshot é idêntico', () => {
+            const item = makeItem({ infoHash: 'a', progress: 0.5 });
+            const items = [item];
+            useDownloadStore.getState().setItems(items);
+            const currentItems = useDownloadStore.getState().items;
+            const listener = jest.fn();
+            const unsubscribe = useDownloadStore.subscribe(listener);
+
+            useDownloadStore.getState().mergeItems([{ ...item }]);
+
+            expect(useDownloadStore.getState().items).toBe(currentItems);
+            expect(useDownloadStore.getState().items[0]).toBe(item);
+            expect(listener).not.toHaveBeenCalled();
+            unsubscribe();
+        });
+
+        it('mantém a referência dos itens inalterados quando outro item muda', () => {
+            const unchangedItem = makeItem({ infoHash: 'a', progress: 0.5 });
+            const changedItem = makeItem({ infoHash: 'b', progress: 0.2 });
+            const currentItems = [unchangedItem, changedItem];
+            useDownloadStore.getState().setItems(currentItems);
+
+            useDownloadStore
+                .getState()
+                .mergeItems([{ ...unchangedItem }, { ...changedItem, progress: 0.8 }]);
+
+            const merged = useDownloadStore.getState().items;
+            expect(merged).not.toBe(currentItems);
+            expect(merged[0]).toBe(unchangedItem);
+            expect(merged[1]).not.toBe(changedItem);
+            expect(merged[1].progress).toBe(0.8);
+        });
+
         it('preserva status local "error" quando o remoto ainda mostra "downloading"', () => {
             useDownloadStore.getState().setItems([makeItem({ infoHash: 'a', status: 'error' })]);
 

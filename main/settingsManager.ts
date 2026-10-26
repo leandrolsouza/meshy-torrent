@@ -56,6 +56,8 @@ export interface SettingsStore {
     set<K extends keyof PersistedSettings>(key: K, value: PersistedSettings[K]): void;
     /** Confirma o conjunto em uma única gravação, preservando as demais chaves. */
     setMany(values: Partial<AppSettings>): void;
+    /** Lê todos os campos em uma única operação quando o armazenamento oferece esse caminho. */
+    getAll?(): Partial<PersistedSettings>;
 }
 
 // ─── Factory options ──────────────────────────────────────────────────────────
@@ -85,6 +87,61 @@ export interface CreateSettingsManagerOptions {
 
 const SCHEMA_VERSION = 1;
 
+const PERSISTED_SETTING_KEYS: (keyof PersistedSettings)[] = [
+    'seedingEnabled',
+    'maxConcurrentSeeders',
+    'bandwidth',
+    'closeToTray',
+    'destinationFolder',
+    'downloadSpeedLimit',
+    'uploadSpeedLimit',
+    'maxConcurrentDownloads',
+    'notificationsEnabled',
+    'theme',
+    'locale',
+    'globalTrackers',
+    'autoApplyGlobalTrackers',
+    'dhtEnabled',
+    'pexEnabled',
+    'utpEnabled',
+    'schemaVersion',
+];
+
+function copySettingValue<T>(value: T): T {
+    return value !== null && typeof value === 'object' ? structuredClone(value) : value;
+}
+
+function createCachedSettingsStore(persistedStore: SettingsStore): SettingsStore {
+    const initial = persistedStore.getAll?.();
+    const cache = new Map<string, unknown>();
+    if (initial) {
+        for (const [key, value] of Object.entries(initial)) {
+            cache.set(key, copySettingValue(value));
+        }
+    } else {
+        for (const key of PERSISTED_SETTING_KEYS) {
+            cache.set(String(key), copySettingValue(persistedStore.get(key)));
+        }
+    }
+
+    return {
+        get<K extends keyof PersistedSettings>(key: K): PersistedSettings[K] {
+            return copySettingValue(cache.get(String(key))) as PersistedSettings[K];
+        },
+        set<K extends keyof PersistedSettings>(key: K, value: PersistedSettings[K]): void {
+            persistedStore.set(key, value);
+            cache.set(String(key), copySettingValue(value));
+        },
+        setMany(values: Partial<AppSettings>): void {
+            const copied = copySettingValue(values);
+            persistedStore.setMany(copied);
+            for (const [key, value] of Object.entries(copied)) {
+                cache.set(key, copySettingValue(value));
+            }
+        },
+    };
+}
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 /**
@@ -110,7 +167,8 @@ const SCHEMA_VERSION = 1;
  */
 export function createSettingsManager(options: CreateSettingsManagerOptions = {}): SettingsManager {
     // ── Resolve the store ──────────────────────────────────────────────────────
-    const store: SettingsStore = options.store ?? createElectronStore();
+    const persistedStore: SettingsStore = options.store ?? createElectronStore();
+    const store = createCachedSettingsStore(persistedStore);
 
     // ── Resolve the downloads-path getter ─────────────────────────────────────
     const getDownloadsPath: () => string =
@@ -136,30 +194,31 @@ export function createSettingsManager(options: CreateSettingsManagerOptions = {}
     // edição manual do arquivo de settings, ou bugs em versões anteriores.
     sanitizeOnLoad(store, getDownloadsPath, log);
 
+    const readSettings = (): AppSettings => ({
+        destinationFolder: store.get('destinationFolder'),
+        downloadSpeedLimit: store.get('downloadSpeedLimit') ?? 0,
+        uploadSpeedLimit: store.get('uploadSpeedLimit') ?? 0,
+        maxConcurrentDownloads:
+            store.get('maxConcurrentDownloads') ?? DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+        seedingEnabled: store.get('seedingEnabled') ?? true,
+        maxConcurrentSeeders: store.get('maxConcurrentSeeders') ?? 2,
+        notificationsEnabled: store.get('notificationsEnabled') ?? true,
+        theme: store.get('theme') ?? 'vs-code-dark',
+        locale: store.get('locale') ?? 'pt-BR',
+        globalTrackers: store.get('globalTrackers') ?? [],
+        autoApplyGlobalTrackers: store.get('autoApplyGlobalTrackers') ?? false,
+        dhtEnabled: store.get('dhtEnabled') ?? true,
+        pexEnabled: store.get('pexEnabled') ?? true,
+        utpEnabled: store.get('utpEnabled') ?? true,
+        closeToTray: store.get('closeToTray') ?? false,
+        bandwidth: store.get('bandwidth') ?? createDefaultBandwidthSettings(),
+    });
+    let settings = readSettings();
+
     // ── Public API ────────────────────────────────────────────────────────────
     return {
         get(): AppSettings {
-            return {
-                destinationFolder: store.get('destinationFolder'),
-                downloadSpeedLimit: store.get('downloadSpeedLimit') ?? 0,
-                uploadSpeedLimit: store.get('uploadSpeedLimit') ?? 0,
-                maxConcurrentDownloads:
-                    store.get('maxConcurrentDownloads') ?? DEFAULT_MAX_CONCURRENT_DOWNLOADS,
-                seedingEnabled: store.get('seedingEnabled') ?? true,
-                maxConcurrentSeeders: store.get('maxConcurrentSeeders') ?? 2,
-                notificationsEnabled: store.get('notificationsEnabled') ?? true,
-                theme: store.get('theme') ?? 'vs-code-dark',
-                locale: store.get('locale') ?? 'pt-BR',
-                globalTrackers: store.get('globalTrackers') ?? [],
-                autoApplyGlobalTrackers: store.get('autoApplyGlobalTrackers') ?? false,
-                dhtEnabled: store.get('dhtEnabled') ?? true,
-                pexEnabled: store.get('pexEnabled') ?? true,
-                utpEnabled: store.get('utpEnabled') ?? true,
-                closeToTray: store.get('closeToTray') ?? false,
-                bandwidth: structuredClone(
-                    store.get('bandwidth') ?? createDefaultBandwidthSettings(),
-                ),
-            };
+            return structuredClone(settings);
         },
 
         set(partial: Partial<AppSettings>): void {
@@ -189,7 +248,10 @@ export function createSettingsManager(options: CreateSettingsManagerOptions = {}
                     updates[key] = partial[key] as never;
                 }
             }
-            if (Object.keys(updates).length > 0) store.setMany(updates);
+            if (Object.keys(updates).length > 0) {
+                store.setMany(updates);
+                settings = { ...settings, ...structuredClone(updates) };
+            }
         },
 
         getDefaultDownloadFolder(): string {
@@ -197,7 +259,7 @@ export function createSettingsManager(options: CreateSettingsManagerOptions = {}
         },
 
         getGlobalTrackers(): string[] {
-            return store.get('globalTrackers') ?? [];
+            return [...settings.globalTrackers];
         },
 
         addGlobalTracker(url: string): void {
@@ -206,26 +268,27 @@ export function createSettingsManager(options: CreateSettingsManagerOptions = {}
             }
 
             const normalized = normalizeTrackerUrl(url);
-            const current = store.get('globalTrackers') ?? [];
+            const current = settings.globalTrackers;
 
             if (current.includes(normalized)) {
                 throw new Error('Tracker já existe na lista global');
             }
 
-            store.set('globalTrackers', [...current, normalized]);
+            const updated = [...current, normalized];
+            store.set('globalTrackers', updated);
+            settings = { ...settings, globalTrackers: updated };
         },
 
         removeGlobalTracker(url: string): void {
             const normalized = normalizeTrackerUrl(url);
-            const current = store.get('globalTrackers') ?? [];
-            store.set(
-                'globalTrackers',
-                current.filter((t) => t !== normalized),
-            );
+            const updated = settings.globalTrackers.filter((tracker) => tracker !== normalized);
+            store.set('globalTrackers', updated);
+            settings = { ...settings, globalTrackers: updated };
         },
 
         setAutoApplyGlobalTrackers(enabled: boolean): void {
             store.set('autoApplyGlobalTrackers', enabled);
+            settings = { ...settings, autoApplyGlobalTrackers: enabled };
         },
     };
 }
@@ -361,6 +424,9 @@ function createElectronStore(): SettingsStore {
         },
         setMany(values: Partial<AppSettings>): void {
             store.set(values);
+        },
+        getAll(): Partial<PersistedSettings> {
+            return store.store;
         },
     };
 }

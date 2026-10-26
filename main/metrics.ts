@@ -8,8 +8,8 @@
 //
 // Acessível via IPC `app:get-metrics` para exibição no renderer (debugging).
 
-import { writeFileSync, readFileSync, statSync, renameSync } from 'fs';
-import { join } from 'path';
+import { appendFile, mkdir, readFile, rename, stat } from 'fs/promises';
+import { dirname, join } from 'path';
 import { performance } from 'node:perf_hooks';
 import { createMetricHistogram } from './metricHistogram';
 import type { HistogramSnapshot } from './metricHistogram';
@@ -225,6 +225,7 @@ class MetricsCollector {
     private metricsFilePath: string | null = null;
     /** Timer de persistência periódica */
     private persistTimer: ReturnType<typeof setInterval> | null = null;
+    private persistenceQueue: Promise<void> = Promise.resolve();
 
     constructor(options: { now?: () => number; clock?: () => number } = {}) {
         this.now = options.now ?? (() => Date.now());
@@ -440,7 +441,7 @@ class MetricsCollector {
         this.metricsFilePath = join(logsDir, 'metrics.ndjson');
 
         this.persistTimer = setInterval(() => {
-            this.persistSnapshot();
+            void this.persistSnapshot();
         }, PERSIST_INTERVAL_MS);
         this.persistTimer.unref();
     }
@@ -454,34 +455,38 @@ class MetricsCollector {
      * Persiste o snapshot atual em disco. Chamado periodicamente e também
      * pode ser chamado manualmente (ex: antes de um crash).
      */
-    persistSnapshot(): void {
-        if (!this.metricsFilePath) return;
+    persistSnapshot(): Promise<void> {
+        const filePath = this.metricsFilePath;
+        if (!filePath) return Promise.resolve();
 
-        try {
-            // Rotacionar se necessário
-            this._rotateIfNeeded();
-
-            const entry: PersistedMetricsEntry = {
-                timestamp: new Date().toISOString(),
-                snapshot: this.getSnapshot(),
-            };
-
-            const line = JSON.stringify(entry) + '\n';
-            writeFileSync(this.metricsFilePath, line, { flag: 'a' });
-        } catch {
-            // Falha silenciosa — métricas não devem impedir o funcionamento do app
-        }
+        this.persistenceQueue = this.persistenceQueue
+            .catch(() => {})
+            .then(async () => {
+                try {
+                    await mkdir(dirname(filePath), { recursive: true });
+                    await this._rotateIfNeeded(filePath);
+                    const entry: PersistedMetricsEntry = {
+                        timestamp: new Date().toISOString(),
+                        snapshot: this.getSnapshot(),
+                    };
+                    await appendFile(filePath, JSON.stringify(entry) + '\n', 'utf-8');
+                } catch {
+                    // Falha silenciosa — métricas não devem impedir o funcionamento do app
+                }
+            });
+        return this.persistenceQueue;
     }
 
     /**
      * Lê os snapshots persistidos do arquivo de métricas.
      * Retorna array vazio se o arquivo não existir ou estiver corrompido.
      */
-    readPersistedSnapshots(): PersistedMetricsEntry[] {
-        if (!this.metricsFilePath) return [];
+    async readPersistedSnapshots(): Promise<PersistedMetricsEntry[]> {
+        const filePath = this.metricsFilePath;
+        if (!filePath) return [];
 
         try {
-            const content = readFileSync(this.metricsFilePath, 'utf-8');
+            const content = await readFile(filePath, 'utf-8');
             const lines = content
                 .trim()
                 .split('\n')
@@ -503,14 +508,12 @@ class MetricsCollector {
     }
 
     /** Rotaciona o arquivo de métricas se ultrapassar o tamanho máximo */
-    private _rotateIfNeeded(): void {
-        if (!this.metricsFilePath) return;
-
+    private async _rotateIfNeeded(filePath: string): Promise<void> {
         try {
-            const stats = statSync(this.metricsFilePath);
+            const stats = await stat(filePath);
             if (stats.size >= MAX_METRICS_FILE_SIZE) {
-                const backupPath = this.metricsFilePath + '.old';
-                renameSync(this.metricsFilePath, backupPath);
+                const backupPath = filePath + '.old';
+                await rename(filePath, backupPath);
             }
         } catch {
             // Arquivo não existe ainda — ok

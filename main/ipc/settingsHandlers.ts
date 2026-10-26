@@ -1,13 +1,16 @@
 import { dialog } from 'electron';
-import { accessSync, constants as fsConstants, existsSync } from 'fs';
+import { access, stat } from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import { resolve } from 'path';
 import type { AppSettings, IPCResponse } from '../../shared/types';
 import { validateSettingsPayload } from '../settingsValidator';
 import type { IpcHandlerContext } from './context';
 
-function hasWritePermission(dirPath: string): boolean {
+async function hasWritePermission(dirPath: string): Promise<boolean> {
     try {
-        accessSync(dirPath, fsConstants.W_OK);
+        const details = await stat(dirPath);
+        if (!details.isDirectory()) return false;
+        await access(dirPath, fsConstants.W_OK);
         return true;
     } catch {
         return false;
@@ -62,7 +65,7 @@ export function registerSettingsIpcHandlers({
                     // '..'). O caminho resolvido é também
                     // persistido para evitar caminhos relativos em configurações salvas.
                     const resolvedFolder = resolve(partial.destinationFolder);
-                    if (!existsSync(resolvedFolder) || !hasWritePermission(resolvedFolder)) {
+                    if (!(await hasWritePermission(resolvedFolder))) {
                         return fail(ErrorCodes.INVALID_PARAMS);
                     }
                     partial.destinationFolder = resolvedFolder;

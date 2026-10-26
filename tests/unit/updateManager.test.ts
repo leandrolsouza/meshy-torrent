@@ -139,7 +139,7 @@ test('instala somente após download verificado, confirmação e persistência, 
 test('falha ao salvar a sessão impede instalar e preserva o download para tentar novamente', async () => {
     const { manager, driver, persistSession, setQuitting } = setup();
     driver.emit('update-downloaded', { version: '0.1.0-beta.2' });
-    persistSession.mockImplementation(() => {
+    persistSession.mockImplementation(async () => {
         throw new Error('disco indisponível');
     });
     await expect(manager.install()).rejects.toThrow(ErrorCodes.UPDATE_SESSION_FAILED);

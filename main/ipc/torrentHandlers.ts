@@ -1,5 +1,6 @@
 import { dialog, shell } from 'electron';
-import { existsSync, accessSync, statSync, constants as fsConstants } from 'fs';
+import { access, stat } from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import { resolve, basename } from 'path';
 import type {
     DownloadItem,
@@ -22,9 +23,11 @@ import type { IpcHandlerContext } from './context';
 
 const IPC_TIMEOUT_MS = 30_000;
 
-function hasWritePermission(dirPath: string): boolean {
+async function hasWritePermission(dirPath: string): Promise<boolean> {
     try {
-        accessSync(dirPath, fsConstants.W_OK);
+        const details = await stat(dirPath);
+        if (!details.isDirectory()) return false;
+        await access(dirPath, fsConstants.W_OK);
         return true;
     } catch {
         return false;
@@ -234,10 +237,7 @@ export function registerTorrentIpcHandlers({
                 return fail(ErrorCodes.FILE_SELECTION_EMPTY);
             if (confirming.has(requestId)) return fail(ErrorCodes.INVALID_PARAMS);
             if (torrentEngine?.isRestarting()) return fail(ErrorCodes.ENGINE_RESTARTING);
-            if (
-                !existsSync(selection.destinationFolder) ||
-                !hasWritePermission(selection.destinationFolder)
-            )
+            if (!(await hasWritePermission(selection.destinationFolder)))
                 return fail(ErrorCodes.DESTINATION_FOLDER_NOT_FOUND);
             confirming.add(requestId);
             ownsConfirmation = true;
@@ -660,8 +660,9 @@ export function registerTorrentIpcHandlers({
 
                 // Verificar se a pasta de destino existe
                 if (
-                    !existsSync(item.destinationFolder) ||
-                    !statSync(item.destinationFolder).isDirectory()
+                    !(await stat(item.destinationFolder)
+                        .then((details) => details.isDirectory())
+                        .catch(() => false))
                 ) {
                     return fail(ErrorCodes.DESTINATION_FOLDER_NOT_FOUND);
                 }
@@ -730,7 +731,11 @@ export function registerTorrentIpcHandlers({
                 );
 
                 // Verificar se o arquivo existe
-                if (!existsSync(fullPath)) {
+                if (
+                    !(await stat(fullPath)
+                        .then(() => true)
+                        .catch(() => false))
+                ) {
                     return fail(ErrorCodes.DESTINATION_FILE_NOT_FOUND);
                 }
 

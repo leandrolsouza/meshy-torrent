@@ -61,6 +61,12 @@ const { ipcMain: mockIpcMain } = require('electron') as {
 jest.mock('fs/promises', () => ({
     realpath: jest.fn(async (folder: string) => require('path').resolve(folder)),
     lstat: jest.fn(async () => ({ isSymbolicLink: () => false })),
+    access: jest.fn(async () => undefined),
+    stat: jest.fn(async (path: string) => {
+        if (!jest.requireMock('fs').existsSync(path))
+            throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return { isDirectory: () => true };
+    }),
 }));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

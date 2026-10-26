@@ -8,6 +8,7 @@ import styles from './PiecesTab.module.css';
 export interface PiecesTabProps {
     infoHash: string;
     status: TorrentStatus;
+    isActive?: boolean;
 }
 
 /**
@@ -17,7 +18,11 @@ export interface PiecesTabProps {
  * - Exibe último estado sem polling quando status é "paused" ou "completed".
  * - Mensagem de erro com botão "Tentar novamente" se IPC falha.
  */
-export const PiecesTab = React.memo(function PiecesTab({ infoHash, status }: PiecesTabProps): React.JSX.Element {
+export const PiecesTab = React.memo(function PiecesTab({
+    infoHash,
+    status,
+    isActive = true,
+}: PiecesTabProps): React.JSX.Element {
     const [pieces, setPieces] = useState<boolean[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [hasLoaded, setHasLoaded] = useState(false);
@@ -38,7 +43,7 @@ export const PiecesTab = React.memo(function PiecesTab({ infoHash, status }: Pie
     }, [infoHash]);
 
     // Polling habilitado apenas quando downloading
-    const pollingEnabled = status === 'downloading';
+    const pollingEnabled = isActive && status === 'downloading';
     usePolling(fetchPieces, 2000, pollingEnabled);
 
     // Memoiza o resumo textual que internamente faz filter sobre o array de peças

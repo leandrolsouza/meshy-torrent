@@ -7,6 +7,7 @@ import styles from './PeersTab.module.css';
 export interface PeersTabProps {
     infoHash: string;
     status: TorrentStatus;
+    isActive?: boolean;
 }
 
 /**
@@ -19,6 +20,7 @@ export interface PeersTabProps {
 export const PeersTab = React.memo(function PeersTab({
     infoHash,
     status,
+    isActive = true,
 }: PeersTabProps): React.JSX.Element {
     const [peers, setPeers] = useState<PeerInfo[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -43,7 +45,8 @@ export const PeersTab = React.memo(function PeersTab({
     }, [infoHash]);
 
     // Polling habilitado durante download ou seeding, sem erro
-    const pollingEnabled = (status === 'downloading' || status === 'seeding') && !hasError;
+    const pollingEnabled =
+        isActive && (status === 'downloading' || status === 'seeding') && !hasError;
     usePolling(fetchPeers, 2000, pollingEnabled);
 
     // Memoiza as linhas da tabela para evitar re-map a cada render do componente pai
