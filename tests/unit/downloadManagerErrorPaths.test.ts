@@ -101,6 +101,7 @@ function makeMockEngine(magnetInfo: TorrentInfo = makeTorrentInfo()): TorrentEng
         }),
         getPeers: jest.fn().mockReturnValue([]),
         getPieces: jest.fn().mockReturnValue([]),
+        shutdown: jest.fn().mockResolvedValue(undefined),
     }) as TorrentEngine & EventEmitter;
 }
 

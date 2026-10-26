@@ -655,6 +655,7 @@ function makeMockEngine(infoHash: string): TorrentEngine & EventEmitter {
         }),
         getPeers: jest.fn().mockReturnValue([]),
         getPieces: jest.fn().mockReturnValue([]),
+        shutdown: jest.fn().mockResolvedValue(undefined),
     });
 
     return engine;

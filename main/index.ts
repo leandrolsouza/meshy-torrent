@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import { app, BrowserWindow, dialog, powerMonitor, shell } from 'electron';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { mkdir, readFile } from 'fs/promises';
@@ -39,11 +39,26 @@ import { ProtectedStoreError } from './storeEncryption';
     app.setPath('userData', legacyUserData);
 }
 
+// A opção é opt-in e precisa ser aplicada antes de app.ready. A renderização
+// por software pode aumentar a carga da CPU, então a aceleração fica ativa por padrão.
+if (
+    process.env['MESHY_DISABLE_HARDWARE_ACCELERATION'] === '1' ||
+    process.argv.includes('--disable-hardware-acceleration')
+) {
+    app.disableHardwareAcceleration();
+}
+let gpuInfoReady = false;
+app.once('gpu-info-update', () => {
+    gpuInfoReady = true;
+});
+
 // Module-level references so the before-quit handler can access them
 let downloadManager: DownloadManager | null = null;
 let desktopReady = false;
 let showMainWindow = () => {};
 let background: ReturnType<typeof createBackgroundController> | undefined;
+let notifications: ReturnType<typeof createNotificationManager> | undefined;
+let crashPersistence: Promise<void> | undefined;
 const externalTorrents = createExternalTorrentInbox(() => {
     if (!desktopReady) return;
     showMainWindow();
@@ -74,13 +89,6 @@ process.on('uncaughtException', (error) => {
         return;
     }
 
-    // Persistir sessão para não perder o estado dos downloads
-    try {
-        downloadManager?.persistSession();
-    } catch (persistError) {
-        logger.error('[CRASH] Falha ao persistir sessão:', String(persistError));
-    }
-
     // Exibir diálogo de erro para o usuário (se o app ainda estiver funcional)
     try {
         dialog.showErrorBox(
@@ -91,19 +99,7 @@ process.on('uncaughtException', (error) => {
         // Se o diálogo falhar, apenas encerrar
     }
 
-    const exitAfterPersistence = Promise.all([
-        downloadManager?.flushSessionPersistence() ?? Promise.resolve(),
-        metrics.persistSnapshot(),
-    ]);
-    if (exitAfterPersistence) {
-        void exitAfterPersistence
-            .catch((persistError) =>
-                logger.error('[CRASH] Falha ao concluir a persistência da sessão:', persistError),
-            )
-            .finally(() => app.exit(1));
-    } else {
-        app.exit(1);
-    }
+    void persistCrashState().finally(() => app.exit(1));
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -111,15 +107,27 @@ process.on('unhandledRejection', (reason) => {
     const stack = reason instanceof Error ? reason.stack : undefined;
     logger.error('[CRASH] Rejeição não tratada:', message, stack);
 
-    // Persistir sessão para não perder o estado dos downloads
-    try {
-        downloadManager?.persistSession();
-    } catch (persistError) {
-        logger.error('[CRASH] Falha ao persistir sessão:', String(persistError));
-    }
-
-    void metrics.persistSnapshot();
+    // Aguarda o flush para que a gravação não dependa do próximo timer ou da saída.
+    void persistCrashState();
 });
+
+function persistCrashState(): Promise<void> {
+    if (crashPersistence) return crashPersistence;
+    crashPersistence = (async () => {
+        try {
+            downloadManager?.persistSession();
+            await Promise.all([
+                downloadManager?.flushSessionPersistence() ?? Promise.resolve(),
+                metrics.persistSnapshot(),
+            ]);
+        } catch (error) {
+            logger.error('[CRASH] Falha ao concluir a persistência:', error);
+        }
+    })().finally(() => {
+        crashPersistence = undefined;
+    });
+    return crashPersistence;
+}
 
 // ─── Factory para criação de BrowserWindow ────────────────────────────────────
 
@@ -319,6 +327,19 @@ app.whenReady()
             engine: torrentEngine,
             settings: settingsManager,
             diagnostics,
+            readProcessMetrics: () => app.getAppMetrics(),
+            readGpuStatus: () => {
+                if (!gpuInfoReady) return null;
+                return {
+                    hardwareAccelerationEnabled: app.isHardwareAccelerationEnabled(),
+                    features: Object.fromEntries(
+                        Object.entries(app.getGPUFeatureStatus()).map(([name, status]) => [
+                            name,
+                            String(status),
+                        ]),
+                    ),
+                };
+            },
             deferLifecycle: true,
         });
 
@@ -388,25 +409,45 @@ app.whenReady()
         // ── Register before-quit handler to persist session ────────────────────────
         let quitAfterSessionFlush = false;
         let sessionFlushComplete = false;
+        const persistBeforeSuspend = () => {
+            downloadManager?.persistSession();
+            void Promise.all([
+                downloadManager?.flushSessionPersistence() ?? Promise.resolve(),
+                metrics.persistSnapshot(),
+            ]).catch((error) =>
+                logger.warn('[Main] Falha ao persistir antes da suspensão:', error),
+            );
+        };
+        powerMonitor.on('suspend', persistBeforeSuspend);
         app.on('before-quit', (event) => {
             if (!sessionFlushComplete) {
                 event.preventDefault();
                 if (quitAfterSessionFlush) return;
                 quitAfterSessionFlush = true;
+                downloadManager?.persistSession();
                 void downloadManager
                     ?.flushSessionPersistence()
                     .catch((error) =>
                         logger.error('[Main] Falha ao persistir sessão ao encerrar:', error),
                     )
                     .then(() => metrics.persistSnapshot())
+                    .catch((error) => logger.error('[Main] Falha ao persistir métricas:', error))
                     .finally(() => {
                         sessionFlushComplete = true;
-                        app.quit();
+                        void torrentEngine
+                            .shutdown()
+                            .catch((error) =>
+                                logger.error('[Main] Falha ao fechar a engine:', error),
+                            )
+                            .finally(() => app.quit());
                     });
                 return;
             }
 
             desktopReady = false;
+            powerMonitor.removeListener('suspend', persistBeforeSuspend);
+            notifications?.dispose();
+            notifications = undefined;
             background?.dispose();
             bandwidth.dispose();
             operationalMetrics.sample();
@@ -443,7 +484,9 @@ app.whenReady()
         attachRendererCrashHandler(mainWindow);
 
         // Inicializar notificações nativas do OS com referência à janela principal
-        createNotificationManager(downloadManager, settingsManager, { mainWindow });
+        notifications = createNotificationManager(downloadManager, settingsManager, {
+            getMainWindow: () => BrowserWindow.getAllWindows()[0],
+        });
         showMainWindow = () => {
             let window = BrowserWindow.getAllWindows()[0];
             if (!window) {

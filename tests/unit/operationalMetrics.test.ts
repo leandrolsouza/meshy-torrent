@@ -24,7 +24,16 @@ function item(hash = 'a', overrides: Partial<DownloadItem> = {}): DownloadItem {
     };
 }
 
-function setup(initial: DownloadItem[] = [], deferLifecycle = false, disableTimers = true) {
+function setup(
+    initial: DownloadItem[] = [],
+    deferLifecycle = false,
+    disableTimers = true,
+    readProcessMetrics?: () => Electron.ProcessMetric[],
+    readGpuStatus?: () => {
+        hardwareAccelerationEnabled: boolean;
+        features: Record<string, string>;
+    } | null,
+) {
     let current = [...initial];
     let clock = 0;
     const collector = createMetricsCollector({ clock: () => clock, now: () => 1000 + clock });
@@ -69,6 +78,8 @@ function setup(initial: DownloadItem[] = [], deferLifecycle = false, disableTime
         now: () => 1000 + clock,
         loopSampler,
         readDisk,
+        readProcessMetrics,
+        readGpuStatus,
         deferLifecycle,
         disableTimers,
     });
@@ -95,6 +106,85 @@ function setup(initial: DownloadItem[] = [], deferLifecycle = false, disableTime
         },
     };
 }
+
+test('snapshot inclui CPU e memória dos processos Electron sem guardar amostras antigas', () => {
+    const processMetric: Electron.ProcessMetric = {
+        pid: 42,
+        creationTime: 1234,
+        type: 'GPU',
+        serviceName: 'GPU Process',
+        cpu: {
+            percentCPUUsage: 12.5,
+            idleWakeupsPerSecond: 3,
+            cumulativeCPUUsage: 9.5,
+        },
+        memory: {
+            workingSetSize: 2048,
+            peakWorkingSetSize: 4096,
+            privateBytes: 1024,
+        },
+    };
+    const rendererMetric: Electron.ProcessMetric = {
+        ...processMetric,
+        pid: 43,
+        type: 'Tab',
+    };
+    const readProcessMetrics = jest
+        .fn<Electron.ProcessMetric[], []>()
+        .mockReturnValueOnce([processMetric])
+        .mockReturnValueOnce([rendererMetric]);
+    const fixture = setup([], false, true, readProcessMetrics);
+    try {
+        expect(fixture.collector.getSnapshot().processResources).toEqual([
+            {
+                pid: 42,
+                creationTime: 1234,
+                type: 'GPU',
+                serviceName: 'GPU Process',
+                cpuPercent: 12.5,
+                idleWakeupsPerSecond: 3,
+                cumulativeCpuSeconds: 9.5,
+                memory: {
+                    workingSetKb: 2048,
+                    peakWorkingSetKb: 4096,
+                    privateBytesKb: 1024,
+                },
+            },
+        ]);
+        expect(readProcessMetrics).toHaveBeenCalledTimes(1);
+
+        fixture.monitor.sample();
+        expect(readProcessMetrics).toHaveBeenCalledTimes(2);
+        expect(fixture.collector.getSnapshot().processResources).toMatchObject([
+            { pid: 43, type: 'Tab' },
+        ]);
+    } finally {
+        fixture.monitor.dispose();
+    }
+});
+
+test('snapshot inclui o estado da GPU quando o Chromium disponibiliza os dados', () => {
+    let gpuStatus: {
+        hardwareAccelerationEnabled: boolean;
+        features: Record<string, string>;
+    } | null = null;
+    const fixture = setup([], false, true, undefined, () => gpuStatus);
+    try {
+        expect(fixture.collector.getSnapshot().gpuStatus).toBeNull();
+        gpuStatus = {
+            hardwareAccelerationEnabled: false,
+            features: { webgl: 'disabled_software' },
+        };
+        fixture.monitor.sample();
+        expect(fixture.collector.getSnapshot().gpuStatus).toEqual({
+            sampledAt: 1000,
+            hardwareAccelerationEnabled: false,
+            features: { webgl: 'disabled_software' },
+        });
+    } finally {
+        fixture.monitor.dispose();
+    }
+});
 
 test('fila, metadados e contadores de produto medem transições sem duplicar progress/done/seed', () => {
     const fixture = setup();

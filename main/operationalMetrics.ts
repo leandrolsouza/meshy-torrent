@@ -63,6 +63,13 @@ export function createOperationalMetrics(options: {
     now?: () => number;
     loopSampler?: { read(): EventLoopMetrics; dispose(): void };
     readDisk?: (folder: string) => Promise<{ freeBytes: number; totalBytes: number }>;
+    /** Lê métricas do Electron uma vez por amostra para manter intervalos de CPU consistentes. */
+    readProcessMetrics?: () => Electron.ProcessMetric[];
+    /** Retorna null até o Chromium disponibilizar as informações da GPU. */
+    readGpuStatus?: () => {
+        hardwareAccelerationEnabled: boolean;
+        features: Record<string, string>;
+    } | null;
     deferLifecycle?: boolean;
     disableTimers?: boolean;
 }) {
@@ -175,6 +182,36 @@ export function createOperationalMetrics(options: {
 
     const sample = (): void => {
         if (disposed) return;
+        if (options.readProcessMetrics) {
+            try {
+                collector.recordProcessResources(
+                    options.readProcessMetrics().map((processMetric) => ({
+                        pid: processMetric.pid,
+                        creationTime: processMetric.creationTime,
+                        type: processMetric.type,
+                        serviceName: processMetric.serviceName ?? processMetric.name ?? null,
+                        cpuPercent: processMetric.cpu.percentCPUUsage,
+                        idleWakeupsPerSecond: processMetric.cpu.idleWakeupsPerSecond,
+                        cumulativeCpuSeconds: processMetric.cpu.cumulativeCPUUsage ?? null,
+                        memory: {
+                            workingSetKb: processMetric.memory.workingSetSize,
+                            peakWorkingSetKb: processMetric.memory.peakWorkingSetSize,
+                            privateBytesKb: processMetric.memory.privateBytes ?? null,
+                        },
+                    })),
+                );
+            } catch {
+                collector.recordCollectionError();
+            }
+        }
+        if (options.readGpuStatus) {
+            try {
+                const gpuStatus = options.readGpuStatus();
+                if (gpuStatus) collector.recordGpuStatus({ ...gpuStatus, sampledAt: now() });
+            } catch {
+                collector.recordCollectionError();
+            }
+        }
         try {
             if (lifecycleRequested && !ready) startLifecycleTracking();
             const snapshot = options.manager.getAll();

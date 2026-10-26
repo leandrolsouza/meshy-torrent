@@ -115,6 +115,8 @@ export interface TorrentEngine {
     getPieces(infoHash: string): PieceStatus;
     /** Reinicia o motor com novas opções, re-adicionando torrents ativos */
     restart(options: TorrentEngineOptions): Promise<void>;
+    /** Fecha sockets, trackers e stores sem apagar os dados dos torrents. */
+    shutdown(): Promise<void>;
     /** Indica se o motor está em processo de reinício */
     isRestarting(): boolean;
     /** Verifica se o engine está saudável e responsivo */
@@ -912,6 +914,23 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
             if (!cancelled) this.emit('restarted');
         });
         return result;
+    }
+
+    async shutdown(): Promise<void> {
+        this._clearTransferProgressTimers();
+        if (this.restartPromise) {
+            try {
+                await this.restartPromise;
+            } catch {
+                // Mesmo após falha no restart, fecha o cliente que ainda estiver ativo.
+            }
+        }
+        if (this.clientClosed) return;
+        await new Promise<void>((resolve, reject) =>
+            this.client.destroy((error) => (error ? reject(error) : resolve())),
+        );
+        this.clientClosed = true;
+        this.pendingMagnets.clear();
     }
 
     private async _doRestart(

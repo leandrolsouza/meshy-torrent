@@ -35,6 +35,28 @@ export interface TransferMetrics {
     recordTransfer(direction: 'download' | 'upload', bytes: number): void;
 }
 
+/** Uso do processo Electron em uma amostra; memória em KiB. */
+export interface ProcessResourceMetric {
+    pid: number;
+    creationTime: number;
+    type: string;
+    serviceName: string | null;
+    cpuPercent: number;
+    idleWakeupsPerSecond: number;
+    cumulativeCpuSeconds: number | null;
+    memory: {
+        workingSetKb: number;
+        peakWorkingSetKb: number;
+        privateBytesKb: number | null;
+    };
+}
+
+export interface GpuStatusMetric {
+    sampledAt: number;
+    hardwareAccelerationEnabled: boolean;
+    features: Record<string, string>;
+}
+
 function copyGauges(gauges: OperationalGauges): OperationalGauges {
     const { queue, eventLoop, disk } = gauges;
     const diagnostics = emptyDiagnosticCounts();
@@ -152,6 +174,10 @@ export interface MetricsSnapshot {
         heapTotal: number;
         rss: number;
     };
+    /** Processos do Electron na última amostra, incluindo renderer e GPU quando ativos. */
+    processResources: ProcessResourceMetric[];
+    /** Estado de aceleração e recursos GPU informado pelo Chromium. */
+    gpuStatus: GpuStatusMetric | null;
 }
 
 /** Entrada persistida no arquivo de métricas */
@@ -213,6 +239,8 @@ class MetricsCollector {
         downloads: emptyErrorCauses(),
     };
     private readonly series: OperationalMetricPoint[] = [];
+    private processResources: ProcessResourceMetric[] = [];
+    private gpuStatus: GpuStatusMetric | null = null;
     private previousSample: {
         clock: number;
         downloaded: number;
@@ -322,6 +350,17 @@ class MetricsCollector {
         this.collectionErrorCount++;
     }
 
+    recordProcessResources(resources: readonly ProcessResourceMetric[]): void {
+        this.processResources = resources.map((resource) => ({
+            ...resource,
+            memory: { ...resource.memory },
+        }));
+    }
+
+    recordGpuStatus(status: GpuStatusMetric): void {
+        this.gpuStatus = { ...status, features: { ...status.features } };
+    }
+
     recordOperationalSample(gauges: OperationalGauges): void {
         const clock = this.clock();
         const previous = this.previousSample;
@@ -424,6 +463,13 @@ class MetricsCollector {
                 heapTotal: mem.heapTotal,
                 rss: mem.rss,
             },
+            processResources: this.processResources.map((resource) => ({
+                ...resource,
+                memory: { ...resource.memory },
+            })),
+            gpuStatus: this.gpuStatus
+                ? { ...this.gpuStatus, features: { ...this.gpuStatus.features } }
+                : null,
         };
     }
 

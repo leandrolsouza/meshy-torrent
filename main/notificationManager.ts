@@ -14,8 +14,10 @@ export interface NotificationManager {
 }
 
 export interface CreateNotificationManagerOptions {
-    /** Janela principal — usada para focar o app ao clicar na notificação */
+    /** Janela principal fixa, mantida por compatibilidade com os chamadores existentes. */
     mainWindow?: BrowserWindow;
+    /** Resolve a janela atual quando uma notificação é clicada. */
+    getMainWindow?: () => BrowserWindow | undefined;
     /** Logger injetável (padrão: electron-log) */
     log?: Logger;
 }
@@ -50,7 +52,7 @@ export function createNotificationManager(
     options: CreateNotificationManagerOptions = {},
 ): NotificationManager {
     const _log = options.log ?? defaultLogger;
-    const mainWindow = options.mainWindow;
+    const getMainWindow = options.getMainWindow ?? (() => options.mainWindow);
 
     // Rastrear status anterior para detectar transições
     const previousStatus = new Map<string, string>();
@@ -83,7 +85,7 @@ export function createNotificationManager(
                 body: `${item.name} (${sizeStr})${durationStr}`,
                 silent: false,
             });
-            notification.on('click', () => focusMainWindow(mainWindow));
+            notification.on('click', () => focusMainWindow(getMainWindow()));
             notification.show();
             _log.info(`[NotificationManager] Notificação: download concluído — ${item.name}`);
         }
@@ -94,7 +96,7 @@ export function createNotificationManager(
                 body: `Falha ao baixar "${item.name}"`,
                 silent: false,
             });
-            notification.on('click', () => focusMainWindow(mainWindow));
+            notification.on('click', () => focusMainWindow(getMainWindow()));
             notification.show();
             _log.info(`[NotificationManager] Notificação: erro no download — ${item.name}`);
         }
@@ -105,7 +107,7 @@ export function createNotificationManager(
                 body: `Não foi possível obter metadados de "${item.name}"`,
                 silent: false,
             });
-            notification.on('click', () => focusMainWindow(mainWindow));
+            notification.on('click', () => focusMainWindow(getMainWindow()));
             notification.show();
             _log.info(`[NotificationManager] Notificação: falha nos metadados — ${item.name}`);
         }
