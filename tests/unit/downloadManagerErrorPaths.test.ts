@@ -13,6 +13,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { access, stat } from 'fs/promises';
 
 jest.mock('fs', () => ({
     ...jest.requireActual('fs'),
@@ -29,6 +30,13 @@ import type { Logger } from '../../main/logger';
 
 const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
 const mockAccessSync = accessSync as jest.MockedFunction<typeof accessSync>;
+
+beforeEach(() => {
+    jest.mocked(stat).mockResolvedValue({ isDirectory: () => true } as Awaited<
+        ReturnType<typeof stat>
+    >);
+    jest.mocked(access).mockResolvedValue(undefined);
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

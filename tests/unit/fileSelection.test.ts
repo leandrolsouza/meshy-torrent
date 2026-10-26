@@ -24,6 +24,7 @@ jest.mock('webtorrent', () => {
 });
 
 import fc from 'fast-check';
+import { access, stat } from 'fs/promises';
 import { createTorrentEngine } from '../../main/torrentEngine';
 import type WebTorrent from 'webtorrent';
 import type { Torrent, TorrentFile } from 'webtorrent';
@@ -319,6 +320,13 @@ jest.mock('fs', () => ({
     existsSync: jest.fn().mockReturnValue(true),
     accessSync: jest.fn().mockReturnValue(undefined),
 }));
+
+beforeEach(() => {
+    jest.mocked(stat).mockResolvedValue({ isDirectory: () => true } as Awaited<
+        ReturnType<typeof stat>
+    >);
+    jest.mocked(access).mockResolvedValue(undefined);
+});
 
 import { EventEmitter } from 'events';
 import { createDownloadManager } from '../../main/downloadManager';

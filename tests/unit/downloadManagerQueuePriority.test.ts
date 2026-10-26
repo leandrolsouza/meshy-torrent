@@ -12,6 +12,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { access, stat } from 'fs/promises';
 import { createDownloadManager } from '../../main/downloadManager';
 import type { TorrentEngine, TorrentInfo, TorrentStatus } from '../../main/torrentEngine';
 import type { SettingsManager } from '../../main/settingsManager';
@@ -33,6 +34,13 @@ jest.mock('fs', () => ({
 
 const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
 const mockAccessSync = accessSync as jest.MockedFunction<typeof accessSync>;
+
+beforeEach(() => {
+    jest.mocked(stat).mockResolvedValue({ isDirectory: () => true } as Awaited<
+        ReturnType<typeof stat>
+    >);
+    jest.mocked(access).mockResolvedValue(undefined);
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

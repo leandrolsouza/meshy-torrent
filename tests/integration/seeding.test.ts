@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { existsSync } from 'fs';
+import { access, stat } from 'fs/promises';
 import { createDownloadManager } from '../../main/downloadManager';
 import type { PersistedStore } from '../../main/downloadManager';
 import type { TorrentEngine, TorrentInfo } from '../../main/torrentEngine';
@@ -93,6 +94,10 @@ function setup(saved: PersistedDownloadItem[] = []) {
 
 beforeEach(() => {
     jest.mocked(existsSync).mockReturnValue(true);
+    jest.mocked(stat).mockResolvedValue({ isDirectory: () => true } as Awaited<
+        ReturnType<typeof stat>
+    >);
+    jest.mocked(access).mockResolvedValue(undefined);
 });
 
 test.each([true, false])(
