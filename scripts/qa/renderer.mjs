@@ -14,6 +14,8 @@ import { createUpdateManager } from '../../main/updateManager';
 import { createExternalTorrentInbox } from '../../main/externalTorrents';
 import { registerIpcHandlers, attachWindowEvents } from '../../main/ipcHandler';
 import { rendererSecurity } from '../../main/rendererSecurity';
+import { parseTraceContext } from '../../shared/traceContext';
+import { createOperationalMetrics } from '../../main/operationalMetrics';
 
 await app.whenReady();
 const root = process.env.MESHY_QA_WORKSPACE;
@@ -80,6 +82,9 @@ session.delete('qaProbe');
 const manager = createDownloadManager(engine, settings, session, undefined, {
     disableCleanupTimer: true,
 });
+const operational = createOperationalMetrics({ manager, engine, settings, disableTimers: true });
+await operational.refreshDisk();
+operational.sample();
 const updates = createUpdateManager({
     driver: updater.autoUpdater,
     currentVersion: version,
@@ -154,12 +159,14 @@ try {
             );
             // Aguarda a transição de cores de 300 ms e a pintura da interface.
             await new Promise((resolve) => setTimeout(resolve, 450));
+            operational.sample();
             await window.webContents.executeJavaScript(
                 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
             );
             const state = await window.webContents.executeJavaScript(`(async () => ({
                 settings: await window.meshy.getSettings(), downloads: await window.meshy.getAll(),
                 update: await window.meshy.getUpdateStatus(),
+                metrics: await window.meshy.getMetrics(),
                 background: getComputedStyle(document.documentElement).getPropertyValue('--color-bg'),
                 theme: document.documentElement.dataset.theme,
                 dropBackground: getComputedStyle(document.querySelector('[role="region"]')).backgroundColor,
@@ -168,6 +175,23 @@ try {
                 overflow: document.documentElement.scrollWidth > innerWidth,
             }))()`);
             assert.equal(state.settings.success, true);
+            assert.equal(state.metrics.success, true);
+            assert(state.metrics.data.series.length > 0);
+            assert.equal(state.metrics.data.operational.queue.pendingAdds, 0);
+            assert.equal(typeof state.metrics.data.operational.eventLoop.p95Ms, 'number');
+            assert(state.metrics.data.operational.disk.destinationsChecked >= 1);
+            assert.equal(state.metrics.data.operational.disk.unavailableDestinations, 0);
+            assert(state.metrics.data.operational.disk.minimumFreeBytes > 0);
+            assert.equal(state.metrics.data.collectionErrorCount, 0);
+            assert(!JSON.stringify(state.metrics.data).includes(profile));
+            // Confirma geração dos IDs no preload sandboxed e retorno pelo IPC real.
+            assert(parseTraceContext(state.settings.traceContext));
+            assert(parseTraceContext(state.downloads.traceContext));
+            assert(state.settings.traceContext.parentSpanId);
+            assert.notEqual(
+                state.settings.traceContext.traceId,
+                state.downloads.traceContext.traceId,
+            );
             assert.equal(state.settings.data.locale, locale);
             assert.equal(state.settings.data.theme, theme);
             assert.equal(state.downloads.success, true);
@@ -199,6 +223,11 @@ try {
             plaintextProbeAbsent: true,
         },
         captures,
+        operationalMetrics: {
+            ipcRoundTrip: true,
+            nativeDiskProbe: true,
+            nativeEventLoopSampler: true,
+        },
         scope: 'Renderer e preload de produção com serviços e IPC reais em janela oculta e perfil isolado; não executa main/index nem instalador',
     };
     writeFileSync(join(run, 'renderer-report.json'), JSON.stringify(report, null, 4));
@@ -209,6 +238,7 @@ try {
 } finally {
     clearTimeout(timeout);
     updates.dispose();
+    operational.dispose();
     window.destroy();
     await new Promise((resolve) => client.destroy(resolve));
     app.exit(succeeded ? 0 : 1);

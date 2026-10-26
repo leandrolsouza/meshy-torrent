@@ -93,14 +93,20 @@ export function registerApplicationIpcHandlers({
                 const componentStackStr =
                     typeof componentStack === 'string' ? componentStack : undefined;
 
-                scopedLog.error(`${source}: ${message}`, {
-                    source,
+                const diagnostic = {
+                    type: 'RendererError',
+                    message,
                     ...(stackStr ? { stack: stackStr } : {}),
                     ...(componentStackStr ? { componentStack: componentStackStr } : {}),
+                };
+                scopedLog.error('Erro reportado pelo renderer', {
+                    event: 'renderer.error',
+                    source,
+                    error: diagnostic,
                 });
 
                 // Registrar nas métricas
-                metrics.recordRendererError();
+                metrics.recordRendererError(diagnostic);
 
                 return ok(undefined);
             } catch (err) {

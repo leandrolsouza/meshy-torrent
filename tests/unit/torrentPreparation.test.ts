@@ -2,9 +2,16 @@ import { EventEmitter } from 'events';
 import WebTorrent from 'webtorrent';
 import { createTorrentPreparation, MetadataOnlyStore } from '../../main/torrentPreparation';
 import { ErrorCodes } from '../../shared/errorCodes';
+import { createMetricsCollector } from '../../main/metrics';
 jest.mock('webtorrent', () => jest.fn());
 
-function setup(automatic = true) {
+function setup(
+    automatic = true,
+    observability: Pick<
+        NonNullable<Parameters<typeof createTorrentPreparation>[0]>,
+        'telemetry' | 'clock'
+    > = {},
+) {
     const torrent = Object.assign(new EventEmitter(), {
         infoHash: 'a'.repeat(40),
         name: 'Archive',
@@ -29,9 +36,68 @@ function setup(automatic = true) {
         createClient: () => client as unknown as WebTorrent,
         metadataTimeoutMs: 100,
         cleanupTimeoutMs: 50,
+        ...observability,
     });
     return { service, torrent, client };
 }
+
+test.each(['magnet', 'buffer'] as const)(
+    'latência de preparação %s mede até o cleanup e não mistura fontes',
+    async (kind) => {
+        let clock = 0;
+        const collector = createMetricsCollector();
+        const { service, torrent } = setup(false, { telemetry: collector, clock: () => clock });
+        try {
+            const work = service.prepare(
+                'metrics-request',
+                kind === 'magnet'
+                    ? { kind, magnetUri: torrent.magnetURI }
+                    : { kind, buffer: Buffer.from('de') },
+            );
+            clock = 25;
+            torrent.emit('metadata');
+            await work;
+            expect(
+                collector.getSnapshot().latency.metadataPreparationMs[kind].resolved,
+            ).toMatchObject({ count: 1, sumMs: 25 });
+            expect(
+                collector.getSnapshot().latency.metadataPreparationMs[
+                    kind === 'magnet' ? 'buffer' : 'magnet'
+                ].resolved.count,
+            ).toBe(0);
+        } finally {
+            service.dispose();
+        }
+    },
+);
+
+test.each(['error', 'cancel'] as const)(
+    'preparação classifica %s sem perder duração ou contar sucesso',
+    async (trigger) => {
+        let clock = 0;
+        const collector = createMetricsCollector();
+        const { service, torrent } = setup(false, { telemetry: collector, clock: () => clock });
+        try {
+            const work = service.prepare('metrics-request', {
+                kind: 'magnet',
+                magnetUri: torrent.magnetURI,
+            });
+            const failed = expect(work).rejects.toThrow();
+            clock = 30;
+            if (trigger === 'cancel') service.cancel('metrics-request');
+            else torrent.emit('error', new Error('Falha de rede'));
+            await failed;
+            const snapshot = collector.getSnapshot().latency.metadataPreparationMs.magnet;
+            expect(snapshot[trigger === 'cancel' ? 'cancelled' : 'failed']).toMatchObject({
+                count: 1,
+                sumMs: 30,
+            });
+            expect(snapshot.resolved.count).toBe(0);
+        } finally {
+            service.dispose();
+        }
+    },
+);
 test('obtém metadados com zero seleção, armazenamento sem disco e encerra a rede antes de apresentar a revisão', async () => {
     const { service, client } = setup();
     const preview = await service.prepare('request-123', {

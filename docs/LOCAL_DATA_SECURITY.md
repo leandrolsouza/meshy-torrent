@@ -16,6 +16,30 @@ Mensagens, stacks, causas e objetos aninhados são tratados; campos como passkey
 token, senha, autorização, cookies e metadados base64 são omitidos. Objetos de erro
 originais, buffers e accessors não são repassados ao destino do log.
 
+O contexto base e o contexto de cada chamada do logger de escopo são sanitizados
+antes de mesclar campos, inclusive quando o logger de destino é injetado. Campos
+e objetos aninhados seguem estruturados para o destino, preservando a identificação
+de campos secretos, como `token`, sem executar funções de formatação do contexto.
+
+Erros preservam somente campos de diagnóstico: `type` (derivado de `Error.name`),
+mensagem, stack, `code`, `errno`, `syscall`, causas e erros agregados. Esses campos
+também passam pela redação. Accessors personalizados são omitidos. O accessor
+nativo de stack do V8 é lido somente quando os campos `name` e `message` são
+strings sem getters. Ciclos e profundidade excessiva recebem marcadores; valores
+lançados sem ser Error são normalizados sem executar `toString` do objeto.
+Veja o esquema dos eventos em [OBSERVABILITY.md](OBSERVABILITY.md).
+
+Caminhos absolutos Windows, UNC e Unix e URIs `file:` são omitidos até o final da
+linha, incluindo nomes de arquivos e caminhos com espaços. As linhas seguintes da
+stack são tratadas separadamente, preservando frames internos sem caminho pessoal.
+E-mails e endereços IPv4/IPv6 reconhecidos em texto também são omitidos. Campos
+pessoais explícitos, como `name`, `username`, `userId`, `email`, `ip`, `peerId`,
+`address`, `phone`, `cpf` e `cnpj`, são omitidos em objetos aninhados. Códigos de
+erro, identificadores operacionais e durações continuam disponíveis.
+O tratamento textual usa padrões reconhecíveis; não identifica nomes próprios ou
+todo dado pessoal arbitrário em texto livre. Novos logs devem continuar evitando
+dados pessoais e segredos na origem.
+
 Essa redação se aplica às novas chamadas do logger do aplicativo. Não modifica logs
 antigos, arquivos `.torrent` importados nem backups anteriores à correção. Se uma
 passkey já foi exposta, revogue/substitua a credencial no serviço do tracker e

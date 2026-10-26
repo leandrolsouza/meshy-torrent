@@ -16,6 +16,10 @@ export function createPublicLookup(
         lookup(hostname, { all: true, verbatim: true }),
 ): LookupFunction {
     return (hostname, options, callback) => {
+        if (typeof hostname !== 'string' || !hostname) {
+            queueMicrotask(() => callback(blockedNetworkDestination(), ''));
+            return;
+        }
         const host = hostname.replace(/^\[|\]$/g, '');
         const literalFamily = isIP(host);
         const urlHost = literalFamily === 6 ? `[${host}]` : host;

@@ -212,7 +212,15 @@ export type PieceStatus = boolean[];
 
 // ─── IPCResponse ──────────────────────────────────────────────────────────────
 
-export type IPCResponse<T> = { success: true; data: T } | { success: false; error: string };
+export type IPCResponse<T> = ({ success: true; data: T } | { success: false; error: string }) & {
+    traceContext?: import('./traceContext').TraceContext;
+};
+
+export interface TorrentErrorEvent {
+    infoHash: string;
+    message: string;
+    traceContext?: import('./traceContext').TraceContext;
+}
 
 export interface MagnetHandlerStatus {
     isDefault: boolean;
@@ -321,13 +329,14 @@ export interface MeshyAPI {
     getPieces(infoHash: string): Promise<IPCResponse<PieceStatus>>;
     // Events
     onProgress(callback: (items: DownloadItem[]) => void): () => void;
-    onError(callback: (data: { infoHash: string; message: string }) => void): () => void;
+    onError(callback: (data: TorrentErrorEvent) => void): () => void;
     // Observabilidade — reportar erros do renderer ao main process
     reportError(error: {
         message: string;
         source: string;
         stack?: string;
         componentStack?: string;
+        traceContext?: import('./traceContext').TraceContext;
     }): void;
     // Observabilidade — obter métricas de operação do main process
     getMetrics(): Promise<IPCResponse<Record<string, unknown>>>;

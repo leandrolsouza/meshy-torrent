@@ -66,3 +66,11 @@ test('rejeita falha de resolução e ausência de endereço da família pedida',
     resolveAll.mockRejectedValueOnce(new Error('DNS indisponível'));
     expect((await resolve()).error?.code).toBe('ERR_NETWORK_DESTINATION_BLOCKED');
 });
+
+test('hostname ausente é bloqueado sem chamar replace em undefined', async () => {
+    const lookup = createPublicLookup();
+    const result = await new Promise<NodeJS.ErrnoException | null>((resolve) =>
+        lookup(undefined as unknown as string, {}, (error) => resolve(error)),
+    );
+    expect(result?.code).toBe('ERR_NETWORK_DESTINATION_BLOCKED');
+});

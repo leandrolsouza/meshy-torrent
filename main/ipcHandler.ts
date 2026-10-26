@@ -14,9 +14,10 @@ import type { DownloadDiagnostics } from './downloadDiagnostics';
 import { getEffectiveBandwidth } from '../shared/bandwidth';
 import type { IPCResponse } from '../shared/types';
 import { ErrorCodes } from '../shared/errorCodes';
-import { logger } from './logger';
+import { createScopedLogger, logger } from './logger';
+import { serializeLogError } from './logRedaction';
 import type { ScopedLogger } from './logger';
-import { metrics } from './metrics';
+import { markIpcOutcome, withIpcMetrics } from './ipcMetrics';
 import {
     validatePayload,
     infoHashSchema,
@@ -24,18 +25,13 @@ import {
     infoHashUrlSchema,
     urlSchema,
 } from './payloadValidator';
-import { randomBytes } from 'crypto';
+import { parseTraceContext } from '../shared/traceContext';
+import { getOperationContext, runWithOperationContext } from './operationContext';
+import { traceOperation } from './tracing';
 import type { TorrentPreparation } from './torrentPreparation';
 import { isTrustedIpcSender } from './rendererSecurity';
 
 export type { IPCResponse } from '../shared/types';
-
-// ─── Correlation ID ───────────────────────────────────────────────────────────
-
-/** Gera um correlation ID curto (8 caracteres hex) para rastreamento de operações IPC */
-function generateCorrelationId(): string {
-    return randomBytes(4).toString('hex');
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,16 +44,19 @@ function fail(error: string): IPCResponse<never> {
 }
 
 function failWithLog(channel: string, err: unknown, scopedLog?: ScopedLogger): IPCResponse<never> {
-    const message = err instanceof Error ? err.message : String(err);
-    if (scopedLog) {
-        scopedLog.error('Falha na operação', { errorCode: message });
-    } else {
-        logger.error(`[IPC] ${channel} failed:`, message);
-    }
+    const error = serializeLogError(err);
+    markIpcOutcome('exception', error);
     // Retornar código genérico para não vazar caminhos de SO, nomes de classe
     // ou stack traces internos para o renderer. O erro completo fica apenas nos logs.
-    const known = Object.values(ErrorCodes).some((code) => code === message);
-    return { success: false, error: known ? message : ErrorCodes.OPERATION_FAILED };
+    const known = Object.values(ErrorCodes).some((code) => code === error.message);
+    const errorCode = known ? error.message : ErrorCodes.OPERATION_FAILED;
+    (scopedLog ?? createScopedLogger(logger, { channel })).error('Falha na operação IPC', {
+        event: 'ipc.operation.failed',
+        channel,
+        errorCode,
+        error,
+    });
+    return { success: false, error: errorCode };
 }
 
 // ─── Rate limiter ─────────────────────────────────────────────────────────────
@@ -116,32 +115,6 @@ export { rateLimiter as _rateLimiter };
 /** Código de erro para rate limiting (centralizado em ErrorCodes) */
 const RATE_LIMITED = ErrorCodes.RATE_LIMITED;
 
-// ─── Metrics wrapper ──────────────────────────────────────────────────────────
-
-/**
- * Envolve um handler IPC com tracking de latência e contagem de erros.
- * Mede o tempo de execução e registra no coletor de métricas.
- * Em modo debug, loga a latência de cada chamada.
- */
-function withMetrics<T>(
-    channel: string,
-    correlationId: string,
-    handler: () => Promise<IPCResponse<T>>,
-): Promise<IPCResponse<T>> {
-    const start = Date.now();
-    return handler().then((result) => {
-        const durationMs = Date.now() - start;
-        metrics.recordIpcCall(channel, durationMs, result.success);
-        logger.debug(
-            `[IPC] ${channel} concluído`,
-            `cid=${correlationId}`,
-            `durationMs=${durationMs}`,
-            `success=${result.success}`,
-        );
-        return result;
-    });
-}
-
 // ─── Handler registration ─────────────────────────────────────────────────────
 
 /**
@@ -171,7 +144,6 @@ export function attachWindowEvents(
 
     // ── TorrentEngine error forwarding ────────────────────────────────────────
     const errorListener = (infoHash: string, err: Error) => {
-        metrics.recordEngineError();
         const stack = err.stack?.split('\n').slice(0, 3).join(' | ') ?? '';
         logger.error('[IPC] Engine error:', infoHash.slice(0, 8), err.message, stack);
         if (
@@ -179,7 +151,12 @@ export function attachWindowEvents(
             !downloadManager.getAll().find((item) => item.infoHash === infoHash)?.fileOperation &&
             !downloadManager.getAll().find((item) => item.infoHash === infoHash)?.pauseReason
         ) {
-            mainWindow.webContents.send('torrent:error', { infoHash, message: err.message });
+            const traceContext = parseTraceContext(getOperationContext());
+            mainWindow.webContents.send('torrent:error', {
+                infoHash,
+                message: err.message,
+                ...(traceContext ? { traceContext } : {}),
+            });
         }
     };
     torrentEngine.on('error', errorListener);
@@ -218,15 +195,42 @@ export function registerIpcHandlers(
         channel: string,
         handler: (event: Electron.IpcMainInvokeEvent, payload: unknown) => Promise<IPCResponse<T>>,
     ): void => {
-        ipcMain.handle(channel, async (event, payload) => {
-            if (!isTrustedIpcSender(event)) return fail(ErrorCodes.INVALID_PARAMS);
-            const cid = generateCorrelationId();
-            if (!rateLimiter.tryConsume(channel)) {
-                logger.warn(`[IPC] Rate limit excedido para canal: ${channel} cid=${cid}`);
-                return fail(RATE_LIMITED) as IPCResponse<T>;
-            }
-            return withMetrics(channel, cid, () => handler(event, payload));
-        });
+        ipcMain.handle(channel, (event, payload, metadata: unknown) =>
+            withIpcMetrics(channel, () => {
+                if (!isTrustedIpcSender(event)) {
+                    markIpcOutcome('unauthorized');
+                    return fail(ErrorCodes.INVALID_PARAMS);
+                }
+                const parent = parseTraceContext(metadata);
+                return runWithOperationContext(undefined, () =>
+                    traceOperation(
+                        channel,
+                        async () => {
+                            let result: IPCResponse<T>;
+                            if (!rateLimiter.tryConsume(channel)) {
+                                markIpcOutcome('rate_limited');
+                                logger.warn(`[IPC] Rate limit excedido para canal: ${channel}`);
+                                result = fail(RATE_LIMITED);
+                            } else {
+                                try {
+                                    result = await handler(event, payload);
+                                } catch (error) {
+                                    result = failWithLog(channel, error);
+                                }
+                            }
+                            // Chamadores legados sem metadados mantêm a forma anterior da resposta.
+                            return metadata === undefined
+                                ? result
+                                : {
+                                      ...result,
+                                      traceContext: parseTraceContext(getOperationContext())!,
+                                  };
+                        },
+                        parent,
+                    ),
+                );
+            }),
+        );
     };
 
     const applyBandwidth = (force = false) => {

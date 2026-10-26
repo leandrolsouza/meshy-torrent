@@ -10,6 +10,9 @@ import {
     MAX_TORRENT_BYTES,
 } from './validators';
 import { configureTorrentNetwork } from './webtorrentInternals';
+import { performance } from 'node:perf_hooks';
+import { metrics } from './metrics';
+import type { MetadataOutcome } from './metrics';
 
 const PREVIEW_TTL_MS = 10 * 60_000;
 const CLEANUP_TIMEOUT_MS = 5_000;
@@ -50,11 +53,15 @@ export function createTorrentPreparation(
         metadataTimeoutMs?: number;
         cleanupTimeoutMs?: number;
         getNetworkOptions?: () => Pick<AppSettings, 'dhtEnabled' | 'pexEnabled' | 'utpEnabled'>;
+        telemetry?: Pick<typeof metrics, 'recordMetadataPreparation'>;
+        clock?: () => number;
     } = {},
 ): TorrentPreparation {
     const drafts = new Map<string, PreparedTorrent>();
     const pending = new Map<string, () => void>();
     const expiry = new Map<string, ReturnType<typeof setTimeout>>();
+    const telemetry = options.telemetry ?? metrics;
+    const clock = options.clock ?? (() => performance.now());
     const createClient =
         options.createClient ??
         (() => {
@@ -89,6 +96,8 @@ export function createTorrentPreparation(
                 throw new Error(ErrorCodes.INVALID_PARAMS);
             }
             let cancelled = false;
+            const startedAt = clock();
+            let outcome: MetadataOutcome = 'failed';
             pending.set(requestId, () => {
                 cancelled = true;
             });
@@ -136,7 +145,12 @@ export function createTorrentPreparation(
                         // O callback de destroy pode nunca retornar. Nesse caso,
                         // falhar e liberar a vaga, sem publicar metadados como sucesso.
                         const cleanupTimer = setTimeout(
-                            () => complete(new Error(ErrorCodes.OPERATION_FAILED)),
+                            () =>
+                                complete(
+                                    Object.assign(new Error(ErrorCodes.OPERATION_FAILED), {
+                                        code: 'ERR_REQUEST_TIMEOUT',
+                                    }),
+                                ),
                             options.cleanupTimeoutMs ?? CLEANUP_TIMEOUT_MS,
                         );
                         try {
@@ -214,9 +228,19 @@ export function createTorrentPreparation(
                 const timer = setTimeout(() => cancel(requestId), PREVIEW_TTL_MS);
                 timer.unref?.();
                 expiry.set(requestId, timer);
+                outcome = 'resolved';
                 return prepared.preview;
+            } catch (error) {
+                if (cancelled) outcome = 'cancelled';
+                throw error;
             } finally {
                 pending.delete(requestId);
+                if (['magnet', 'file', 'buffer'].includes(source?.kind))
+                    telemetry.recordMetadataPreparation(
+                        source.kind,
+                        outcome,
+                        Math.max(0, clock() - startedAt),
+                    );
             }
         },
         get(requestId) {

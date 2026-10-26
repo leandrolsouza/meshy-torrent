@@ -8,6 +8,11 @@ import { isValidMagnetUri, hasTorrentMagicBytes, MAX_TORRENT_BYTES } from './val
 import { ErrorCodes } from '../shared/errorCodes';
 import { isValidTrackerUrl, normalizeTrackerUrl } from '../shared/validators';
 import { logger } from './logger';
+import { getOperationContext, runWithOperationContext } from './operationContext';
+import type { OperationContext } from './operationContext';
+import { traceOperation } from './tracing';
+import { metrics } from './metrics';
+import type { TransferMetrics } from './metrics';
 import type {
     TorrentStatus,
     TorrentFileInfo,
@@ -161,6 +166,7 @@ function torrentToInfo(torrent: Torrent, status: TorrentStatus): TorrentInfo {
 // ─── Implementation ───────────────────────────────────────────────────────────
 
 class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
+    private readonly operationContexts = new WeakMap<Torrent, OperationContext>();
     private client: WebTorrent;
     private downloadPath: string;
     /** Tracks the current status for each infoHash */
@@ -180,7 +186,11 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
     /** Timestamp de criação do engine (para health check) */
     private readonly createdAt = Date.now();
 
-    constructor(options: TorrentEngineOptions, client?: WebTorrent) {
+    constructor(
+        options: TorrentEngineOptions,
+        client?: WebTorrent,
+        private readonly transferMetrics: TransferMetrics = metrics,
+    ) {
         super();
         // Evitar warnings de memory leak com muitos torrents.
         // Cada torrent registra listeners de progress, done, error, wire.
@@ -217,7 +227,13 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
                 error.message,
                 stack,
             );
-            for (const torrent of this.client.torrents) this.emit('error', torrent.infoHash, err);
+            for (const torrent of this.client.torrents) {
+                this._withTorrentContext(torrent, () =>
+                    traceOperation('torrent.client.error', () =>
+                        this.emit('error', torrent.infoHash, err),
+                    ),
+                );
+            }
         });
     }
 
@@ -255,6 +271,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         paused = false,
         options?: TorrentAddOptions,
     ): Promise<TorrentInfo> {
+        const origin = getOperationContext();
         if (buffer.length > MAX_TORRENT_BYTES)
             return Promise.reject(new Error(ErrorCodes.INVALID_FILE_PATH));
         if (!hasTorrentMagicBytes(buffer)) {
@@ -263,39 +280,48 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         return new Promise((resolve, reject) => {
             let settled = false;
             let torrent: Torrent;
-            const finish = (err?: Error, ready?: Torrent): void => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                if (err) {
-                    logger.error(
-                        '[TorrentEngine] Falha ao adicionar torrent via buffer:',
-                        err.message,
-                    );
-                    if (torrent && !(torrent as Torrent & { destroyed?: boolean }).destroyed)
-                        torrent.destroy({ destroyStore: false }, () => {});
-                    reject(err);
-                } else if (ready) {
-                    const status = paused ? 'paused' : 'downloading';
-                    this.statusMap.set(ready.infoHash, status);
-                    logger.info(
-                        '[TorrentEngine] Status:',
-                        ready.infoHash.slice(0, 8),
-                        '->',
-                        status,
-                    );
-                    logger.info(
-                        '[TorrentEngine] Torrent adicionado via buffer:',
-                        ready.infoHash.slice(0, 8),
-                    );
-                    if (options?.selectedFileIndices)
-                        this.selectionMap.set(ready.infoHash, new Set(options.selectedFileIndices));
-                    this._initSelectionMap(ready);
-                    resolve(torrentToInfo(ready, status));
-                }
-            };
+            const finish = (err?: Error, ready?: Torrent): void =>
+                runWithOperationContext(origin, () => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    if (err) {
+                        logger.error(
+                            '[TorrentEngine] Falha ao adicionar torrent via buffer:',
+                            err.message,
+                        );
+                        if (torrent && !(torrent as Torrent & { destroyed?: boolean }).destroyed)
+                            torrent.destroy({ destroyStore: false }, () => {});
+                        reject(err);
+                    } else if (ready) {
+                        const status = paused ? 'paused' : 'downloading';
+                        this.statusMap.set(ready.infoHash, status);
+                        logger.info(
+                            '[TorrentEngine] Status:',
+                            ready.infoHash.slice(0, 8),
+                            '->',
+                            status,
+                        );
+                        logger.info(
+                            '[TorrentEngine] Torrent adicionado via buffer:',
+                            ready.infoHash.slice(0, 8),
+                        );
+                        if (options?.selectedFileIndices)
+                            this.selectionMap.set(
+                                ready.infoHash,
+                                new Set(options.selectedFileIndices),
+                            );
+                        this._initSelectionMap(ready);
+                        resolve(torrentToInfo(ready, status));
+                    }
+                });
             const timer = setTimeout(
-                () => finish(new Error('Adição do torrent expirou')),
+                () =>
+                    finish(
+                        Object.assign(new Error('Adição do torrent expirou'), {
+                            code: 'ERR_REQUEST_TIMEOUT',
+                        }),
+                    ),
                 options?.verifyExisting ? 30 * 60_000 : 20_000,
             );
             try {
@@ -353,27 +379,32 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
             this.statusMap.set(hash, initialStatus);
             logger.info('[TorrentEngine] Status:', hash.slice(0, 8), '->', initialStatus);
             this._attachTorrentListeners(torrent);
-            const ready = (): void => {
-                if ((torrent as Torrent & { destroyed?: boolean }).destroyed) return;
-                const previous = this.statusMap.get(hash);
-                const newStatus =
-                    previous === 'paused' || previous === 'completed' || previous === 'seeding'
-                        ? previous
-                        : 'downloading';
-                this.statusMap.set(hash, newStatus);
-                logger.info(
-                    '[TorrentEngine] Status:',
-                    hash.slice(0, 8),
-                    '->',
-                    newStatus,
-                    '(metadados resolvidos)',
+            const ready = (): void =>
+                this._withTorrentContext(torrent, () =>
+                    traceOperation('torrent.metadata.ready', () => {
+                        if ((torrent as Torrent & { destroyed?: boolean }).destroyed) return;
+                        const previous = this.statusMap.get(hash);
+                        const newStatus =
+                            previous === 'paused' ||
+                            previous === 'completed' ||
+                            previous === 'seeding'
+                                ? previous
+                                : 'downloading';
+                        this.statusMap.set(hash, newStatus);
+                        logger.info(
+                            '[TorrentEngine] Status:',
+                            hash.slice(0, 8),
+                            '->',
+                            newStatus,
+                            '(metadados resolvidos)',
+                        );
+                        this._initSelectionMap(torrent);
+                        this.emit('progress', {
+                            ...torrentToInfo(torrent, this.statusMap.get(hash)!),
+                            infoHash: hash,
+                        });
+                    }),
                 );
-                this._initSelectionMap(torrent);
-                this.emit('progress', {
-                    ...torrentToInfo(torrent, this.statusMap.get(hash)!),
-                    infoHash: hash,
-                });
-            };
             torrent.once('ready', ready);
             if (torrent.ready) ready();
             logger.info(
@@ -394,6 +425,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 
     async pause(infoHash: string): Promise<void> {
         const torrent = this._getTorrent(infoHash);
+        if (torrent) this._rememberOperation(torrent);
         this.statusMap.set(infoHash, 'paused');
         logger.info('[TorrentEngine] Status:', infoHash.slice(0, 8), '-> paused');
         if (torrent) await this._stopNetwork(torrent);
@@ -406,7 +438,12 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
                 stopTorrentNetwork(torrent),
                 new Promise<never>((_, reject) => {
                     timer = setTimeout(
-                        () => reject(new Error('Falha ao pausar: timeout')),
+                        () =>
+                            reject(
+                                Object.assign(new Error('Falha ao pausar: timeout'), {
+                                    code: 'ERR_REQUEST_TIMEOUT',
+                                }),
+                            ),
                         PAUSE_RESUME_TIMEOUT_MS,
                     );
                 }),
@@ -418,6 +455,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 
     async resume(infoHash: string, seeding = false): Promise<void> {
         const torrent = this._getTorrent(infoHash);
+        if (torrent) this._rememberOperation(torrent);
         if (!torrent) throw new Error('Torrent não encontrado: ' + infoHash);
         if (seeding) {
             if (!torrent.ready) throw new Error(ErrorCodes.FILE_METADATA_UNAVAILABLE);
@@ -444,6 +482,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 
     async remove(infoHash: string, deleteFiles: boolean): Promise<void> {
         const torrent = this._getTorrent(infoHash);
+        if (torrent) this._rememberOperation(torrent);
         if (!torrent) {
             // Already removed — treat as success
             this.statusMap.delete(infoHash);
@@ -497,6 +536,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
     /** Fecha store e rede sem remover dados ou a pasta escolhida pelo usuário. */
     async detachTorrent(infoHash: string): Promise<void> {
         const torrent = this._getTorrent(infoHash);
+        if (torrent) this._rememberOperation(torrent);
         if (torrent) {
             await new Promise<void>((resolve, reject) =>
                 torrent.destroy({ destroyStore: false }, (error) =>
@@ -595,6 +635,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 
     setFileSelection(infoHash: string, selectedIndices: number[]): TorrentFileInfo[] {
         const torrent = this._getTorrent(infoHash);
+        if (torrent) this._rememberOperation(torrent);
         if (!torrent) {
             throw new Error(`Torrent não encontrado: ${infoHash}`);
         }
@@ -640,6 +681,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 
     addTracker(infoHash: string, trackerUrl: string): void {
         const torrent = this._getTorrent(infoHash);
+        if (torrent) this._rememberOperation(torrent);
         if (!torrent) {
             throw new Error(`Torrent não encontrado: ${infoHash}`);
         }
@@ -667,6 +709,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 
     removeTracker(infoHash: string, trackerUrl: string): void {
         const torrent = this._getTorrent(infoHash);
+        if (torrent) this._rememberOperation(torrent);
         if (!torrent) {
             throw new Error(`Torrent não encontrado: ${infoHash}`);
         }
@@ -818,7 +861,12 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         const timeout = new Promise<never>((_, reject) => {
             timer = setTimeout(() => {
                 cancelled = true;
-                reject(new Error('Restart do engine expirou após ' + RESTART_TIMEOUT_MS + 'ms'));
+                reject(
+                    Object.assign(
+                        new Error('Restart do engine expirou após ' + RESTART_TIMEOUT_MS + 'ms'),
+                        { code: 'ERR_REQUEST_TIMEOUT' },
+                    ),
+                );
             }, RESTART_TIMEOUT_MS);
         });
         const result = Promise.race([work, timeout])
@@ -949,48 +997,87 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         this.selectionMap.set(torrent.infoHash, allIndices);
     }
 
+    private _rememberOperation(torrent: Torrent): void {
+        const context = getOperationContext();
+        if (context) this.operationContexts.set(torrent, context);
+    }
+
+    private _withTorrentContext<T>(torrent: Torrent, callback: () => T): T {
+        return runWithOperationContext(this.operationContexts.get(torrent), callback);
+    }
+
     private _attachTorrentListeners(torrent: Torrent): void {
-        torrent.on('warning', (err) => {
-            const message = err instanceof Error ? err.message : String(err);
-            const now = Date.now();
-            if (now - (this.warningTimes.get(message) ?? -Infinity) < 60_000) return;
-            if (this.warningTimes.size >= 256) this.warningTimes.clear();
-            this.warningTimes.set(message, now);
-            logger.warn('[TorrentEngine] Aviso de rede:', torrent.infoHash.slice(0, 8), message);
-        });
-        torrent.on('download', () => {
-            const status = this.statusMap.get(torrent.infoHash) ?? 'downloading';
-            this.emit('progress', torrentToInfo(torrent, status));
-        });
+        this._rememberOperation(torrent);
+        torrent.on('warning', (err) =>
+            this._withTorrentContext(torrent, () => {
+                const message = err instanceof Error ? err.message : String(err);
+                const now = Date.now();
+                if (now - (this.warningTimes.get(message) ?? -Infinity) < 60_000) return;
+                if (this.warningTimes.size >= 256) this.warningTimes.clear();
+                this.warningTimes.set(message, now);
+                logger.warn(
+                    '[TorrentEngine] Aviso de rede:',
+                    torrent.infoHash.slice(0, 8),
+                    message,
+                );
+            }),
+        );
+        torrent.on('download', (bytes: number) =>
+            this._withTorrentContext(torrent, () => {
+                this.transferMetrics.recordTransfer('download', bytes);
+                const status = this.statusMap.get(torrent.infoHash) ?? 'downloading';
+                this.emit('progress', torrentToInfo(torrent, status));
+            }),
+        );
 
-        torrent.on('upload', () => {
-            const status = this.statusMap.get(torrent.infoHash) ?? 'downloading';
-            this.emit('progress', torrentToInfo(torrent, status));
-        });
+        torrent.on('upload', (bytes: number) =>
+            this._withTorrentContext(torrent, () => {
+                this.transferMetrics.recordTransfer('upload', bytes);
+                const status = this.statusMap.get(torrent.infoHash) ?? 'downloading';
+                this.emit('progress', torrentToInfo(torrent, status));
+            }),
+        );
 
-        torrent.on('done', () => {
-            this.statusMap.set(torrent.infoHash, 'seeding');
-            logger.info('[TorrentEngine] Status:', torrent.infoHash.slice(0, 8), '-> seeding');
-            this.emit('done', torrent.infoHash);
-        });
+        torrent.on('done', () =>
+            this._withTorrentContext(torrent, () =>
+                traceOperation('torrent.event.done', () => {
+                    this.statusMap.set(torrent.infoHash, 'seeding');
+                    logger.info(
+                        '[TorrentEngine] Status:',
+                        torrent.infoHash.slice(0, 8),
+                        '-> seeding',
+                    );
+                    this.emit('done', torrent.infoHash);
+                }),
+            ),
+        );
 
-        torrent.on('error', (err) => {
-            const active = this._getTorrent(torrent.infoHash);
-            // WebTorrent destroys a duplicate before emitting its error. Keep the
-            // original torrent's state intact; the addition promise handles rejection.
-            if (active && active !== torrent) return;
-            this.statusMap.set(torrent.infoHash, 'error');
-            logger.info('[TorrentEngine] Status:', torrent.infoHash.slice(0, 8), '-> error');
-            const error = err instanceof Error ? err : new Error(String(err));
-            const stack = error.stack?.split('\n').slice(0, 3).join(' | ') ?? '';
-            logger.error(
-                '[TorrentEngine] Erro de torrent:',
-                torrent.infoHash.slice(0, 8),
-                error.message,
-                stack,
-            );
-            this.emit('error', torrent.infoHash, error);
-        });
+        torrent.on('error', (err) =>
+            this._withTorrentContext(torrent, () =>
+                traceOperation('torrent.event.error', () => {
+                    const active = this._getTorrent(torrent.infoHash);
+                    // WebTorrent destroys a duplicate before emitting its error. Keep the
+                    // original torrent's state intact; the addition promise handles rejection.
+                    if (active && active !== torrent) return;
+                    this.statusMap.set(torrent.infoHash, 'error');
+                    logger.info(
+                        '[TorrentEngine] Status:',
+                        torrent.infoHash.slice(0, 8),
+                        '-> error',
+                    );
+                    const error = err instanceof Error ? err : new Error(String(err));
+                    const stack = error.stack?.split('\n').slice(0, 3).join(' | ') ?? '';
+                    logger.error(
+                        '[TorrentEngine] Erro de torrent:',
+                        torrent.infoHash.slice(0, 8),
+                        error.message,
+                        stack,
+                    );
+                    this.emit('error', torrent.infoHash, error);
+                    return { success: false };
+                }),
+            ),
+        );
     }
 }
 
@@ -1006,6 +1093,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
 export function createTorrentEngine(
     options: TorrentEngineOptions,
     webTorrentClient?: WebTorrent,
+    transferMetrics?: TransferMetrics,
 ): TorrentEngine {
-    return new TorrentEngineImpl(options, webTorrentClient);
+    return new TorrentEngineImpl(options, webTorrentClient, transferMetrics);
 }

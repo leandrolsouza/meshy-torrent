@@ -18,6 +18,7 @@ import { createBackgroundController } from './backgroundController';
 import { randomUUID } from 'crypto';
 import { createBandwidthController } from './bandwidthController';
 import { createDownloadDiagnostics } from './downloadDiagnostics';
+import { createOperationalMetrics } from './operationalMetrics';
 import { createMagnetAssociation } from './magnetAssociation';
 import updater from 'electron-updater';
 import { load, FAILSAFE_SCHEMA } from 'js-yaml';
@@ -309,6 +310,13 @@ app.whenReady()
             engine: torrentEngine,
         });
         void diagnostics.refresh();
+        const operationalMetrics = createOperationalMetrics({
+            manager: downloadManager,
+            engine: torrentEngine,
+            settings: settingsManager,
+            diagnostics,
+            deferLifecycle: true,
+        });
 
         // Restore previous session — falha não é fatal; o app inicia com estado vazio
         try {
@@ -320,6 +328,9 @@ app.whenReady()
                 (sessionErr as Error).message,
             );
         }
+
+        operationalMetrics.startLifecycleTracking();
+        operationalMetrics.sample();
 
         let updateConfiguration: unknown = null;
         if (app.isPackaged && process.platform === 'win32') {
@@ -374,12 +385,15 @@ app.whenReady()
             desktopReady = false;
             background?.dispose();
             bandwidth.dispose();
+            operationalMetrics.sample();
+            operationalMetrics.dispose();
             diagnostics.dispose();
             clearInterval(diskTimer);
             preparation.dispose();
             updates.dispose();
             downloadManager?.persistSession();
             metrics.persistSnapshot();
+            metrics.disablePersistence();
         });
 
         // ── Create main window ────────────────────────────────────────────────────
@@ -476,7 +490,7 @@ function attachRendererCrashHandler(window: BrowserWindow): void {
         );
 
         // Registrar nas métricas
-        metrics.recordRendererCrash();
+        metrics.recordRendererCrash(details.reason);
 
         // Persistir sessão ao detectar crash do renderer
         try {

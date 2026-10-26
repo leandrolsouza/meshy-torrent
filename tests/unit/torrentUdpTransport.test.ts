@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type dgram from 'node:dgram';
+import { createSocket as createNativeSocket } from 'node:dgram';
+import type { LookupFunction } from 'node:net';
 import type { LookupAddress } from 'node:dns';
 import { createPublicLookup } from '../../main/torrentNetworkPolicy';
 import { createTorrentUdpTransport } from '../../main/torrentUdpTransport';
@@ -55,4 +57,57 @@ test('encerrar o socket enquanto resolve DNS impede envio tardio', async () => {
     finish([{ address: '8.8.8.8', family: 4 }]);
     await new Promise((done) => setImmediate(done));
     expect(send).not.toHaveBeenCalled();
+});
+
+test('aceita o reenvio normalizado do Node e preserva callbacks', async () => {
+    const { socket, send } = setup();
+    const callback = jest.fn();
+    const payload = [Buffer.from('test')];
+    socket.send(payload, 6969, 'tracker.example.com', callback);
+    await new Promise((done) => setImmediate(done));
+    expect(send).toHaveBeenCalledWith(payload, 6969, '8.8.8.8', callback);
+});
+
+test('sem hostname falha pelo callback, sem resolver undefined nem lançar no event loop', async () => {
+    const { socket, send, resolveAll, error } = setup();
+    const callback = jest.fn();
+    socket.send(Buffer.from('test'), 6969, callback);
+    await new Promise((done) => setImmediate(done));
+    expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'ERR_NETWORK_DESTINATION_BLOCKED' }),
+        0,
+    );
+    expect(resolveAll).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+});
+
+test('socket UDP real conclui envios enfileirados após bind nas duas assinaturas', async () => {
+    const receiver = createNativeSocket('udp4');
+    // Somente loopback sintético; a política de produção não é usada nem relaxada.
+    const localLookup: LookupFunction = (_host, _options, callback) =>
+        callback(null, '127.0.0.1', 4);
+    const transport = createTorrentUdpTransport(createNativeSocket, localLookup);
+    const sender = transport.createSocket('udp4');
+    try {
+        await new Promise<void>((resolve) => receiver.bind(0, '127.0.0.1', resolve));
+        const address = receiver.address();
+        const first = Buffer.from('first');
+        const firstBytes = await new Promise<number>((resolve, reject) =>
+            sender.send(first, 0, first.length, address.port, 'fixture.test', (error, bytes) =>
+                error ? reject(error) : resolve(bytes),
+            ),
+        );
+        const secondBytes = await new Promise<number>((resolve, reject) =>
+            sender.send([Buffer.from('second')], address.port, 'fixture.test', (error, bytes) =>
+                error ? reject(error) : resolve(bytes),
+            ),
+        );
+        expect(firstBytes).toBe(first.length);
+        expect(secondBytes).toBe(Buffer.byteLength('second'));
+        expect(sender.address().port).toBeGreaterThan(0);
+    } finally {
+        sender.close();
+        receiver.close();
+    }
 });

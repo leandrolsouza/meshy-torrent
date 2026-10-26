@@ -1,5 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
-import type { DownloadItem, IPCResponse, TorrentFileInfo } from '../../shared/types';
+import type {
+    DownloadItem,
+    IPCResponse,
+    TorrentFileInfo,
+    TorrentErrorEvent,
+} from '../../shared/types';
 import { useDownloadStore } from '../store/downloadStore';
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -28,17 +33,17 @@ export function useDownloads() {
         });
 
         // onError: main process emits an error event for a specific torrent
-        const removeErrorListener = window.meshy.onError(
-            (data: { infoHash: string; message: string }) => {
-                console.error(`[useDownloads] Torrent error for ${data.infoHash}: ${data.message}`);
-                // Update the item status to 'error' in the store
-                const items = useDownloadStore.getState().items;
-                const item = items.find((i) => i.infoHash === data.infoHash);
-                if (item) {
-                    updateItem({ ...item, status: 'error' });
-                }
-            },
-        );
+        const removeErrorListener = window.meshy.onError((data: TorrentErrorEvent) => {
+            console.error(`[useDownloads] Torrent error for ${data.infoHash}: ${data.message}`, {
+                traceContext: data.traceContext,
+            });
+            // Update the item status to 'error' in the store
+            const items = useDownloadStore.getState().items;
+            const item = items.find((i) => i.infoHash === data.infoHash);
+            if (item) {
+                updateItem({ ...item, status: 'error' });
+            }
+        });
 
         // Cleanup: remove both listeners when the component unmounts
         return () => {

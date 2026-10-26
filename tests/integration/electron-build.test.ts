@@ -1,3 +1,4 @@
+import { webcrypto } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -68,6 +69,7 @@ describe('build Electron', () => {
         const exposeInMainWorld = jest.fn();
         const invoke = jest.fn().mockResolvedValue({ success: true, data: [] });
         runInNewContext(entries.preload.code, {
+            crypto: webcrypto,
             require: (name: string) => {
                 if (name !== 'electron') throw new Error(`Import indisponível no sandbox: ${name}`);
                 return {
@@ -80,18 +82,67 @@ describe('build Electron', () => {
         expect(exposeInMainWorld).toHaveBeenCalledWith('meshy', expect.any(Object));
         const api = exposeInMainWorld.mock.calls[0][1] as MeshyAPI;
         await api.getAll();
-        expect(invoke).toHaveBeenCalledWith('torrent:get-all');
+        expect(invoke).toHaveBeenCalledWith(
+            'torrent:get-all',
+            undefined,
+            expect.objectContaining({
+                traceId: expect.stringMatching(/^[a-f0-9]{32}$/),
+                spanId: expect.stringMatching(/^[a-f0-9]{16}$/),
+            }),
+        );
         await api.registerMagnetHandler();
-        expect(invoke).toHaveBeenCalledWith('app:register-magnet-handler');
+        expect(invoke).toHaveBeenCalledWith(
+            'app:register-magnet-handler',
+            undefined,
+            expect.objectContaining({
+                traceId: expect.stringMatching(/^[a-f0-9]{32}$/),
+                spanId: expect.stringMatching(/^[a-f0-9]{16}$/),
+            }),
+        );
         await api.getMagnetHandlerStatus();
-        expect(invoke).toHaveBeenCalledWith('app:get-magnet-handler-status');
+        expect(invoke).toHaveBeenCalledWith(
+            'app:get-magnet-handler-status',
+            undefined,
+            expect.objectContaining({
+                traceId: expect.stringMatching(/^[a-f0-9]{32}$/),
+                spanId: expect.stringMatching(/^[a-f0-9]{16}$/),
+            }),
+        );
         await api.openMagnetDefaultApps();
-        expect(invoke).toHaveBeenCalledWith('app:open-magnet-default-apps');
+        expect(invoke).toHaveBeenCalledWith(
+            'app:open-magnet-default-apps',
+            undefined,
+            expect.objectContaining({
+                traceId: expect.stringMatching(/^[a-f0-9]{32}$/),
+                spanId: expect.stringMatching(/^[a-f0-9]{16}$/),
+            }),
+        );
         await api.getUpdateStatus();
-        expect(invoke).toHaveBeenCalledWith('app:update-status');
+        expect(invoke).toHaveBeenCalledWith(
+            'app:update-status',
+            undefined,
+            expect.objectContaining({
+                traceId: expect.stringMatching(/^[a-f0-9]{32}$/),
+                spanId: expect.stringMatching(/^[a-f0-9]{16}$/),
+            }),
+        );
         await api.checkForUpdates();
-        expect(invoke).toHaveBeenCalledWith('app:check-updates');
+        expect(invoke).toHaveBeenCalledWith(
+            'app:check-updates',
+            undefined,
+            expect.objectContaining({
+                traceId: expect.stringMatching(/^[a-f0-9]{32}$/),
+                spanId: expect.stringMatching(/^[a-f0-9]{16}$/),
+            }),
+        );
         await api.installUpdate();
-        expect(invoke).toHaveBeenCalledWith('app:install-update');
+        expect(invoke).toHaveBeenCalledWith(
+            'app:install-update',
+            undefined,
+            expect.objectContaining({
+                traceId: expect.stringMatching(/^[a-f0-9]{32}$/),
+                spanId: expect.stringMatching(/^[a-f0-9]{16}$/),
+            }),
+        );
     });
 });

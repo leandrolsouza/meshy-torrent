@@ -1,5 +1,6 @@
 import log from 'electron-log';
 import { redactLogValue, redactSensitiveText } from './logRedaction';
+import { getOperationContext } from './operationContext';
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 //
@@ -14,6 +15,10 @@ import { redactLogValue, redactSensitiveText } from './logRedaction';
 
 /** Campos de contexto opcionais para enriquecer mensagens de log */
 export interface LogContext {
+    /** Nome estável do evento; não deve conter dados da operação. */
+    event?: string;
+    /** Diagnóstico serializado e sanitizado antes de chegar ao destino do log. */
+    error?: unknown;
     /** Canal IPC que originou a operação */
     channel?: string;
     /** InfoHash do torrent relacionado */
@@ -51,17 +56,19 @@ export function isDebugEnabled(): boolean {
     return debugEnabled;
 }
 
-/**
- * Formata campos de contexto como string legível para append ao log.
- * Campos undefined/null são omitidos. Resultado: `{channel=torrent:pause, infoHash=abc123}`
- */
-function formatContext(ctx: LogContext): string {
-    const entries = Object.entries(ctx).filter(
-        ([, v]) => v !== undefined && v !== null && v !== '',
-    );
-    if (entries.length === 0) return '';
-    const fields = entries.map(([k, v]) => `${k}=${String(v)}`).join(', ');
-    return ` {${fields}}`;
+function sanitizeContext(ctx: LogContext): LogContext {
+    const safe = redactLogValue(ctx);
+    return typeof safe === 'object' && safe !== null ? (safe as LogContext) : { context: safe };
+}
+
+function enrichContext(ctx: LogContext): LogContext {
+    return {
+        ...ctx,
+        schemaVersion: 1,
+        event: typeof ctx.event === 'string' && ctx.event ? ctx.event : 'application.log',
+        // IDs ativos são autoritativos: campos livres não substituem a correlação.
+        ...getOperationContext(),
+    };
 }
 
 /**
@@ -70,23 +77,29 @@ function formatContext(ctx: LogContext): string {
  */
 export const logger: Logger = {
     info(message: string, ...args: unknown[]): void {
-        log.info(redactSensitiveText(message), ...args.map((arg) => redactLogValue(arg)));
+        log.info(redactSensitiveText(message), ...logArguments(args));
     },
     warn(message: string, ...args: unknown[]): void {
-        log.warn(redactSensitiveText(message), ...args.map((arg) => redactLogValue(arg)));
+        log.warn(redactSensitiveText(message), ...logArguments(args));
     },
     error(message: string, ...args: unknown[]): void {
-        log.error(redactSensitiveText(message), ...args.map((arg) => redactLogValue(arg)));
+        log.error(redactSensitiveText(message), ...logArguments(args));
     },
     debug(message: string, ...args: unknown[]): void {
         if (debugEnabled) {
-            log.info(
-                redactSensitiveText(`[DEBUG] ${message}`),
-                ...args.map((arg) => redactLogValue(arg)),
-            );
+            log.info(redactSensitiveText(`[DEBUG] ${message}`), ...logArguments(args));
         }
     },
 };
+
+function logArguments(args: unknown[]): unknown[] {
+    const safe = args.map((arg) => redactLogValue(arg));
+    const first = safe[0];
+    if (safe.length === 1 && first && typeof first === 'object' && !Array.isArray(first))
+        return [enrichContext(first as LogContext)];
+    const context = getOperationContext();
+    return [...safe, ...(context ? [enrichContext({})] : [])];
+}
 
 // ─── Scoped logger ────────────────────────────────────────────────────────────
 
@@ -98,10 +111,10 @@ export const logger: Logger = {
  * @example
  * const log = createScopedLogger(logger, { channel: 'torrent:pause' });
  * log.info('Operação iniciada', { infoHash: 'abc123' });
- * // => "[torrent:pause] Operação iniciada {infoHash=abc123}"
+ * // => mensagem "[torrent:pause] Operação iniciada" + objeto { channel, infoHash, ... }
  *
  * log.error('Falha na operação', { infoHash: 'abc123', durationMs: 150 });
- * // => "[torrent:pause] Falha na operação {infoHash=abc123, durationMs=150}"
+ * // => mensagem + objeto { channel, infoHash, durationMs, schemaVersion, event, ... }
  */
 export interface ScopedLogger {
     info(message: string, ctx?: LogContext): void;
@@ -111,29 +124,30 @@ export interface ScopedLogger {
 }
 
 export function createScopedLogger(base: Logger, baseCtx: LogContext): ScopedLogger {
-    const prefix = baseCtx.channel ? `[${baseCtx.channel}]` : '[Meshy Torrent]';
+    // Sanitizar antes de acessar/mesclar campos: spreads e String(objeto) podem
+    // executar accessors e perder os nomes usados para identificar segredos.
+    const safeBaseCtx = sanitizeContext(baseCtx);
+    const write = (level: keyof Logger, message: string, ctx?: LogContext): void => {
+        const merged = enrichContext({ ...safeBaseCtx, ...(ctx ? sanitizeContext(ctx) : {}) });
+        const prefix =
+            typeof merged.channel === 'string' && merged.channel
+                ? `[${merged.channel}]`
+                : '[Meshy Torrent]';
+        base[level](`${prefix} ${redactSensitiveText(message)}`, merged);
+    };
 
     return {
         info(message: string, ctx?: LogContext): void {
-            const merged = { ...baseCtx, ...ctx };
-            // Remover channel do contexto formatado (já está no prefixo)
-            delete merged.channel;
-            base.info(`${prefix} ${message}${formatContext(merged)}`);
+            write('info', message, ctx);
         },
         warn(message: string, ctx?: LogContext): void {
-            const merged = { ...baseCtx, ...ctx };
-            delete merged.channel;
-            base.warn(`${prefix} ${message}${formatContext(merged)}`);
+            write('warn', message, ctx);
         },
         error(message: string, ctx?: LogContext): void {
-            const merged = { ...baseCtx, ...ctx };
-            delete merged.channel;
-            base.error(`${prefix} ${message}${formatContext(merged)}`);
+            write('error', message, ctx);
         },
         debug(message: string, ctx?: LogContext): void {
-            const merged = { ...baseCtx, ...ctx };
-            delete merged.channel;
-            base.debug(`${prefix} ${message}${formatContext(merged)}`);
+            write('debug', message, ctx);
         },
     };
 }

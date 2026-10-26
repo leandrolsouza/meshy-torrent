@@ -38,7 +38,11 @@ function withTimeout<T>(
 ): Promise<T> {
     return new Promise<T>((resolvePromise, reject) => {
         const timer = setTimeout(() => {
-            reject(new Error(`Operação expirou após ${timeoutMs}ms`));
+            reject(
+                Object.assign(new Error(`Operação expirou após ${timeoutMs}ms`), {
+                    code: 'ERR_REQUEST_TIMEOUT',
+                }),
+            );
         }, timeoutMs);
 
         promise
