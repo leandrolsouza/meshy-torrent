@@ -1,5 +1,6 @@
 import {
     isValidMagnetUri,
+    normalizeMagnetUri,
     isValidTorrentFile,
     hasTorrentMagicBytes,
     isValidSpeedLimit,
@@ -30,6 +31,23 @@ describe('isValidMagnetUri', () => {
 
     it('accepts uppercase hex hash', () => {
         expect(isValidMagnetUri(`magnet:?xt=urn:btih:${'A'.repeat(40)}`)).toBe(true);
+    });
+
+    it('normaliza Base32 e parâmetros xt em ordens diferentes', () => {
+        const magnet = normalizeMagnetUri(
+            'MAGNET:?dn=Example&xt=urn:btmh:1220abc&XT=URN:BTIH:VKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVK',
+        );
+        expect(magnet?.infoHash).toBe(VALID_HASH);
+        expect(magnet?.uri).toContain(`xt=urn:btih:${VALID_HASH}`);
+    });
+
+    it('aceita identidades equivalentes e rejeita hashes v1 conflitantes', () => {
+        expect(
+            isValidMagnetUri(`magnet:?xt=urn:btih:${VALID_HASH}&xt=urn:btih:${'A'.repeat(40)}`),
+        ).toBe(true);
+        expect(
+            isValidMagnetUri(`magnet:?xt=urn:btih:${VALID_HASH}&xt=urn:btih:${'b'.repeat(40)}`),
+        ).toBe(false);
     });
 
     it.each([

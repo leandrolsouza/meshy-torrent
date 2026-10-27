@@ -5,7 +5,7 @@ import type { AppSettings, TorrentPreview, TorrentSource } from '../shared/types
 import { ErrorCodes } from '../shared/errorCodes';
 import {
     hasTorrentMagicBytes,
-    isValidMagnetUri,
+    normalizeMagnetUri,
     isValidTorrentFile,
     MAX_TORRENT_BYTES,
 } from './validators';
@@ -104,9 +104,9 @@ export function createTorrentPreparation(
             try {
                 let input: string | Buffer;
                 if (source.kind === 'magnet') {
-                    if (!isValidMagnetUri(source.magnetUri))
-                        throw new Error(ErrorCodes.INVALID_MAGNET_URI);
-                    input = source.magnetUri;
+                    const magnet = normalizeMagnetUri(source.magnetUri);
+                    if (!magnet) throw new Error(ErrorCodes.INVALID_MAGNET_URI);
+                    input = magnet.uri;
                 } else {
                     if (source.kind === 'file') {
                         if (!isValidTorrentFile(source.filePath)) {

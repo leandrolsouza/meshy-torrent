@@ -7,7 +7,7 @@ de lançamento da primeira versão estável. O [roadmap pós-1.0](docs/ROADMAP_P
 detalha a evolução planejada de funcionalidades e plataformas.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-0.1.0--beta.1-orange.svg)
+![Version](https://img.shields.io/badge/version-0.1.0--beta.14-orange.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
 
 ---
@@ -39,8 +39,8 @@ Activity Bar navigation, and a keyboard-friendly layout. It runs on **Windows**,
 - Native OS notifications on download completion
 - Customizable themes with dynamic application via CSS variables
 - Internationalization: `pt-BR` and `en-US`
-- Updates via GitHub Releases on Windows x64, in signed distributions,
-  with automatic download and user-confirmed restart
+- Updates via the official GitHub Releases feed on Windows x64, with automatic download
+  and user-confirmed restart; unsigned builds verify the download hash but not the publisher
 - Advanced network settings: DHT, PEX, uTP
 
 When adding a torrent, Meshy Torrent first fetches only its metadata. Choose the files and destination
@@ -141,7 +141,7 @@ All IPC handlers return `IPCResponse<T>` — `{ success: true, data: T }` or `{ 
 ```bash
 git clone <repository-url>
 cd meshy
-npm install
+npm ci
 npm run dev
 ```
 
@@ -150,16 +150,16 @@ reflected instantly; main process changes restart Electron automatically.
 
 ### Other useful commands
 
-| Command                 | Description                               |
-| ----------------------- | ----------------------------------------- |
-| `npm test`              | Run all tests with Jest                   |
-| `npm run test:watch`    | Tests in watch mode                       |
-| `npm run test:coverage` | Test coverage report                      |
-| `npm run typecheck`     | Full type-check (`tsc --noEmit`)          |
-| `npm run lint`          | ESLint                                    |
-| `npm run lint:fix`      | ESLint with auto-fix                      |
-| `npm run format`        | Prettier --write                          |
-| `npm run format:check`  | Prettier --check (no file modifications)  |
+| Command                 | Description                              |
+| ----------------------- | ---------------------------------------- |
+| `npm test`              | Run all tests with Jest                  |
+| `npm run test:watch`    | Tests in watch mode                      |
+| `npm run test:coverage` | Test coverage report                     |
+| `npm run typecheck`     | Full type-check (`tsc --noEmit`)         |
+| `npm run lint`          | ESLint                                   |
+| `npm run lint:fix`      | ESLint with auto-fix                     |
+| `npm run format`        | Prettier --write                         |
+| `npm run format:check`  | Prettier --check (no file modifications) |
 
 ---
 
@@ -171,11 +171,11 @@ npm run build
 
 Artifacts are generated in `out/`:
 
-| File                 | Description                    |
-| -------------------- | ------------------------------ |
-| `out/main/index.mjs` | Main process (Node.js)         |
-| `out/preload/`       | Preload script                 |
-| `out/renderer/`      | React UI (HTML + JS)           |
+| File                 | Description            |
+| -------------------- | ---------------------- |
+| `out/main/index.mjs` | Main process (Node.js) |
+| `out/preload/`       | Preload script         |
+| `out/renderer/`      | React UI (HTML + JS)   |
 
 To run the generated build:
 
@@ -191,12 +191,11 @@ artifacts in `dist/`, without publishing releases. Configuration lives in
 dependencies and may require network access and platform-specific tools. Each installer should
 be validated on its corresponding system before publishing.
 
-The first candidate is **0.1.0-beta.1 for Windows x64**. Use `npm run dist:win` to generate
-the NSIS installer and `dist/SHA256SUMS`. Publishing depends on the
-[release qualification](docs/RELEASE.md); see the
-[beta release notes](docs/releases/0.1.0-beta.1.md). The updater is already integrated, but
-the unsigned candidate keeps manual installation. To enable automatic updates in the
-distribution, see [signing and publishing](docs/AUTO_UPDATES.md).
+The current version is **0.1.0-beta.14**. Use `npm run dist:win` to generate the Windows x64
+NSIS installer and `dist/SHA256SUMS`. Publishing depends on the
+[release qualification](docs/RELEASE.md). Unsigned builds use the official update feed and
+verify the installer hash, but cannot verify publisher identity. See
+[updates and signing](docs/AUTO_UPDATES.md).
 
 Use `npm run qa:release` to compile and run qualification with a real local TCP transfer,
 session recovery, and renderer screenshots in different themes and languages. `npm run
@@ -217,14 +216,14 @@ meshy/
 └── docs/
 ```
 
-| Folder      | Responsibility                                                                                           |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| `main/`     | Electron main process: WebTorrent engine, download queue, persistence, IPC handlers, logs, and metrics  |
+| Folder      | Responsibility                                                                                             |
+| ----------- | ---------------------------------------------------------------------------------------------------------- |
+| `main/`     | Electron main process: WebTorrent engine, download queue, persistence, IPC handlers, logs, and metrics     |
 | `electron/` | Preload script — exposes the `window.meshy` API to the renderer via `contextBridge` with context isolation |
-| `shared/`   | Code shared between main and renderer: types (`types.ts`), validators, formatters, and error codes       |
-| `src/`      | React renderer process: components, hooks, Zustand stores, themes, i18n, and styles                     |
-| `tests/`    | Jest tests: unit (`tests/unit/`) and integration (`tests/integration/`)                                 |
-| `docs/`     | Project documentation and maintenance guides                                                             |
+| `shared/`   | Code shared between main and renderer: types (`types.ts`), validators, formatters, and error codes         |
+| `src/`      | React renderer process: components, hooks, Zustand stores, themes, i18n, and styles                        |
+| `tests/`    | Jest tests: unit (`tests/unit/`) and integration (`tests/integration/`)                                    |
+| `docs/`     | Project documentation and maintenance guides                                                               |
 
 ### TypeScript Configuration
 

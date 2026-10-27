@@ -21,7 +21,7 @@ import type {
     DiskSpaceInfo,
     TorrentMetadata,
 } from '../shared/types';
-import { DEFAULT_MAX_CONCURRENT_DOWNLOADS } from '../shared/validators';
+import { DEFAULT_MAX_CONCURRENT_DOWNLOADS, normalizeMagnetUri } from '../shared/validators';
 import { logger as defaultLogger } from './logger';
 import type { Logger } from './logger';
 import {
@@ -936,9 +936,10 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     async addMagnetLink(magnetUri: string): Promise<DownloadItem> {
         const destinationFolder = this.settings.get().destinationFolder;
 
-        // Extract infoHash from magnet URI for early duplicate detection
-        const hashMatch = magnetUri.match(/xt=urn:btih:([a-fA-F0-9]{40})/i);
-        const pendingHash = hashMatch?.[1]?.toLowerCase();
+        const magnet = normalizeMagnetUri(magnetUri);
+        if (!magnet) throw new Error(ErrorCodes.INVALID_MAGNET_URI);
+        magnetUri = magnet.uri;
+        const pendingHash = magnet.infoHash;
         if (pendingHash && (this.items.has(pendingHash) || this.pendingHashes.has(pendingHash))) {
             throw new Error('Torrent já existe na lista');
         }

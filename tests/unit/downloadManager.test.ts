@@ -1210,7 +1210,10 @@ describe('DownloadManager — persistSession()', () => {
         mockExistsSync.mockReturnValue(true);
 
         const manager = createDownloadManager(engine, settings, store);
-        await manager.addMagnetLink(VALID_MAGNET);
+        await manager.addMagnetLink(
+            'magnet:?dn=Example&xt=urn:btih:VKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVK',
+        );
+        await expect(manager.addMagnetLink(VALID_MAGNET)).rejects.toThrow('Torrent já existe');
 
         // Persist current state
         manager.persistSession();
@@ -1224,6 +1227,7 @@ describe('DownloadManager — persistSession()', () => {
         expect(restored).toHaveLength(1);
         expect(restored[0].infoHash).toBe(INFO_HASH);
         expect(restored[0].status).toBe('resolving-metadata');
+        await expect(manager2.addMagnetLink(VALID_MAGNET)).rejects.toThrow('Torrent já existe');
     });
 });
 

@@ -41,6 +41,22 @@ function setup(
     return { service, torrent, client };
 }
 
+test('normaliza magnet Base32 antes da resolução temporária de metadados', async () => {
+    const { service, client } = setup();
+    try {
+        await service.prepare('base32', {
+            kind: 'magnet',
+            magnetUri: 'magnet:?dn=Example&XT=URN:BTIH:VKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVK',
+        });
+        expect(client.add).toHaveBeenCalledWith(
+            `magnet:?dn=Example&xt=urn:btih:${'a'.repeat(40)}`,
+            expect.anything(),
+        );
+    } finally {
+        service.dispose();
+    }
+});
+
 test.each(['magnet', 'buffer'] as const)(
     'latência de preparação %s mede até o cleanup e não mistura fontes',
     async (kind) => {

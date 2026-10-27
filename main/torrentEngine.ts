@@ -4,7 +4,7 @@ import { readTorrentFile } from './torrentInput';
 import { join, basename } from 'path';
 import WebTorrent, { type TorrentOptions } from 'webtorrent';
 import type { Torrent } from 'webtorrent';
-import { isValidMagnetUri, hasTorrentMagicBytes, MAX_TORRENT_BYTES } from './validators';
+import { normalizeMagnetUri, hasTorrentMagicBytes, MAX_TORRENT_BYTES } from './validators';
 import { ErrorCodes } from '../shared/errorCodes';
 import { isValidTrackerUrl, normalizeTrackerUrl } from '../shared/validators';
 import { logger } from './logger';
@@ -359,17 +359,15 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         paused = false,
         options?: TorrentAddOptions,
     ): Promise<TorrentInfo> {
-        if (!isValidMagnetUri(magnetUri)) {
-            return Promise.reject(
-                new Error('Formato inválido. Esperado: magnet:?xt=urn:btih:<40 hex chars>'),
-            );
+        const magnet = normalizeMagnetUri(magnetUri);
+        if (!magnet) {
+            return Promise.reject(new Error('Formato inválido de magnet URI'));
         }
-        // noUncheckedIndexedAccess: isValidMagnetUri acima garante o padrão; grupo 1 sempre presente
-        const hash = magnetUri.match(/xt=urn:btih:([a-fA-F0-9]{40})/i)![1]!.toLowerCase();
+        const hash = magnet.infoHash;
         if (this._getTorrent(hash)) return Promise.reject(new Error('Torrent já existe na lista'));
         logger.info('[TorrentEngine] Adicionando torrent via magnet:', hash.slice(0, 8));
         try {
-            const torrent = this.client.add(magnetUri, {
+            const torrent = this.client.add(magnet.uri, {
                 path: options?.destinationFolder ?? this.downloadPath,
                 paused,
                 deselect: options?.selectedFileIndices !== undefined,

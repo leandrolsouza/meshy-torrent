@@ -7,17 +7,58 @@ import ipaddr from 'ipaddr.js';
 // ─── Magnet URI ───────────────────────────────────────────────────────────────
 export { MAX_TORRENT_BYTES } from './torrentLimits';
 
-// O hash continua exigindo 40 caracteres hexadecimais. A query também admite
-// caracteres reservados de URI usados em trackers, nomes e seleção de arquivos.
-const MAGNET_REGEX =
-    /^magnet:\?xt=urn:btih:[a-fA-F0-9]{40}(&[a-zA-Z0-9&=%.+:?_/~,!'()*[\]@$;-]*)?$/i;
+const MAGNET_REGEX = /^magnet:\?[a-zA-Z0-9&=%.+:?_/~,!'()*[\]@$;-]*$/i;
+
+/** Normaliza a identidade v1 e os parâmetros xt para a interpretação da engine. */
+export function normalizeMagnetUri(uri: string): { uri: string; infoHash: string } | null {
+    const trimmed = uri.trim();
+    if (!MAGNET_REGEX.test(trimmed)) return null;
+    let infoHash: string | undefined;
+    const parameters = trimmed.slice(trimmed.indexOf('?') + 1).split('&');
+    for (let i = 0; i < parameters.length; i++) {
+        const parameter = parameters[i]!;
+        const separator = parameter.indexOf('=');
+        if (separator < 0 || parameter.slice(0, separator).toLowerCase() !== 'xt') continue;
+        let value: string;
+        try {
+            value = decodeURIComponent(parameter.slice(separator + 1));
+        } catch {
+            return null;
+        }
+        if (!/^urn:btih:/i.test(value)) continue;
+        const hash = value.slice(9);
+        let normalized: string;
+        if (/^[a-f0-9]{40}$/i.test(hash)) {
+            normalized = hash.toLowerCase();
+        } else if (/^[a-z2-7]{32}$/i.test(hash)) {
+            let bits = 0;
+            let accumulator = 0;
+            normalized = '';
+            for (const character of hash.toUpperCase()) {
+                accumulator =
+                    (accumulator << 5) | 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(character);
+                bits += 5;
+                if (bits >= 8) {
+                    bits -= 8;
+                    normalized += ((accumulator >>> bits) & 255).toString(16).padStart(2, '0');
+                }
+            }
+        } else {
+            return null;
+        }
+        if (infoHash && infoHash !== normalized) return null;
+        infoHash = normalized;
+        parameters[i] = `xt=urn:btih:${normalized}`;
+    }
+    return infoHash ? { uri: `magnet:?${parameters.join('&')}`, infoHash } : null;
+}
 
 /**
  * Valida se uma string é um magnet URI válido.
- * Requer o prefixo `magnet:?xt=urn:btih:` seguido de exatamente 40 caracteres hexadecimais.
+ * Aceita identidade v1 hexadecimal ou Base32, em qualquer posição da query.
  */
 export function isValidMagnetUri(uri: string): boolean {
-    return MAGNET_REGEX.test(uri.trim());
+    return normalizeMagnetUri(uri) !== null;
 }
 
 // ─── Torrent file ─────────────────────────────────────────────────────────────

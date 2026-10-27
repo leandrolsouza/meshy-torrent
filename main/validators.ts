@@ -2,6 +2,7 @@
 // This file exists for backward compatibility with existing imports in main/.
 export {
     isValidMagnetUri,
+    normalizeMagnetUri,
     isValidTorrentFile,
     hasTorrentMagicBytes,
     isValidSpeedLimit,
