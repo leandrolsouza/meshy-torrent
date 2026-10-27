@@ -2,6 +2,10 @@
 
 Cross-platform desktop BitTorrent client built with Electron, React, and WebTorrent.
 
+O [roadmap para a versão 1.0.0](docs/ROADMAP.md) define os próximos marcos e os critérios
+de lançamento da primeira versão estável. O [roadmap pós-1.0](docs/ROADMAP_POST_1_0.md)
+detalha a evolução planejada de funcionalidades e plataformas.
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-0.1.0--beta.1-orange.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
