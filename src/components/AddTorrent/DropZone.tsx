@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { MeshyIcon } from '../common/MeshyIcon';
 import type { TorrentSource } from '../../../shared/types';
-import { isValidMagnetUri, MAX_TORRENT_BYTES } from '../../../shared/validators';
+import { isV2OnlyMagnetUri, isValidMagnetUri, MAX_TORRENT_BYTES } from '../../../shared/validators';
 import { AddTorrentModal } from './AddTorrentModal';
 import styles from './DropZone.module.css';
 
@@ -26,6 +26,10 @@ export function DropZone(): React.JSX.Element {
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean);
+            if (links.some(isV2OnlyMagnetUri)) {
+                setError(intl.formatMessage({ id: 'error.torrent.unsupportedV2' }));
+                return;
+            }
             if (!links.length || links.some((link) => !isValidMagnetUri(link))) {
                 setError(intl.formatMessage({ id: 'dropZone.invalidMagnet' }));
                 return;

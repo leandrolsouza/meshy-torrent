@@ -2,6 +2,13 @@ import { createExternalTorrentInbox } from '../../main/externalTorrents';
 import { resolve } from 'path';
 const magnet = `magnet:?xt=urn:btih:${'a'.repeat(40)}`;
 
+test('encaminha magnet v2 do sistema para exibir o diagnóstico de incompatibilidade', () => {
+    const inbox = createExternalTorrentInbox(jest.fn());
+    const v2 = `magnet:?xt=urn:btmh:1220${'ab'.repeat(32)}`;
+    inbox.enqueueArguments([v2]);
+    expect(inbox.getPending()[0]?.source).toEqual({ kind: 'magnet', magnetUri: v2 });
+});
+
 test('entrega o magnet do navegador com trackers literais para revisão', () => {
     const show = jest.fn();
     const inbox = createExternalTorrentInbox(show);

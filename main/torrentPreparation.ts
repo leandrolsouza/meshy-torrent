@@ -1,4 +1,5 @@
 import { readTorrentFile } from './torrentInput';
+import { isV2OnlyTorrent } from './torrentFormat';
 import WebTorrent from 'webtorrent';
 import type { Torrent, TorrentOptions } from 'webtorrent';
 import type { AppSettings, TorrentPreview, TorrentSource } from '../shared/types';
@@ -6,6 +7,7 @@ import { ErrorCodes } from '../shared/errorCodes';
 import {
     hasTorrentMagicBytes,
     normalizeMagnetUri,
+    isV2OnlyMagnetUri,
     isValidTorrentFile,
     MAX_TORRENT_BYTES,
 } from './validators';
@@ -104,6 +106,8 @@ export function createTorrentPreparation(
             try {
                 let input: string | Buffer;
                 if (source.kind === 'magnet') {
+                    if (isV2OnlyMagnetUri(source.magnetUri))
+                        throw new Error(ErrorCodes.UNSUPPORTED_V2);
                     const magnet = normalizeMagnetUri(source.magnetUri);
                     if (!magnet) throw new Error(ErrorCodes.INVALID_MAGNET_URI);
                     input = magnet.uri;
@@ -121,6 +125,7 @@ export function createTorrentPreparation(
                     if (input.length > MAX_TORRENT_BYTES || !hasTorrentMagicBytes(input)) {
                         throw new Error(ErrorCodes.INVALID_FILE_PATH);
                     }
+                    if (isV2OnlyTorrent(input)) throw new Error(ErrorCodes.UNSUPPORTED_V2);
                 }
                 if (cancelled) throw new Error(ErrorCodes.PREPARATION_CANCELLED);
                 const client = createClient();

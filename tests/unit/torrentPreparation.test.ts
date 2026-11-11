@@ -57,6 +57,17 @@ test('normaliza magnet Base32 antes da resolução temporária de metadados', as
     }
 });
 
+test.each([
+    { kind: 'magnet' as const, magnetUri: `magnet:?xt=urn:btmh:1220${'ab'.repeat(32)}` },
+    { kind: 'buffer' as const, buffer: Buffer.from('d4:infod12:meta versioni2eee') },
+])('rejeita entrada v2 antes de iniciar o cliente', async (source) => {
+    const createClient = jest.fn();
+    const service = createTorrentPreparation({ createClient });
+    await expect(service.prepare('v2', source)).rejects.toThrow(ErrorCodes.UNSUPPORTED_V2);
+    expect(createClient).not.toHaveBeenCalled();
+    service.dispose();
+});
+
 test.each(['magnet', 'buffer'] as const)(
     'latência de preparação %s mede até o cleanup e não mistura fontes',
     async (kind) => {

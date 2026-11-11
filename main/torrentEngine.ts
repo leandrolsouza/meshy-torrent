@@ -4,8 +4,14 @@ import { readTorrentFile } from './torrentInput';
 import { join, basename } from 'path';
 import WebTorrent, { type TorrentOptions } from 'webtorrent';
 import type { Torrent } from 'webtorrent';
-import { normalizeMagnetUri, hasTorrentMagicBytes, MAX_TORRENT_BYTES } from './validators';
+import {
+    isV2OnlyMagnetUri,
+    normalizeMagnetUri,
+    hasTorrentMagicBytes,
+    MAX_TORRENT_BYTES,
+} from './validators';
 import { ErrorCodes } from '../shared/errorCodes';
+import { isV2OnlyTorrent } from './torrentFormat';
 import { isValidTrackerUrl, normalizeTrackerUrl } from '../shared/validators';
 import { logger } from './logger';
 import { getOperationContext, runWithOperationContext } from './operationContext';
@@ -283,6 +289,7 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         if (!hasTorrentMagicBytes(buffer)) {
             return Promise.reject(new Error('Arquivo inválido: não é um arquivo .torrent válido'));
         }
+        if (isV2OnlyTorrent(buffer)) return Promise.reject(new Error(ErrorCodes.UNSUPPORTED_V2));
         return new Promise((resolve, reject) => {
             let settled = false;
             let torrent: Torrent;
@@ -359,6 +366,8 @@ class TorrentEngineImpl extends EventEmitter implements TorrentEngine {
         paused = false,
         options?: TorrentAddOptions,
     ): Promise<TorrentInfo> {
+        if (isV2OnlyMagnetUri(magnetUri))
+            return Promise.reject(new Error(ErrorCodes.UNSUPPORTED_V2));
         const magnet = normalizeMagnetUri(magnetUri);
         if (!magnet) {
             return Promise.reject(new Error('Formato inválido de magnet URI'));

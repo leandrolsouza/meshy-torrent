@@ -111,6 +111,16 @@ function renderModal(overrides: { isOpen?: boolean; onClose?: () => void } = {})
     return { ...result, onClose };
 }
 
+test('informa magnet apenas v2 antes de preparar ou adicionar', () => {
+    renderModal();
+    fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: `magnet:?xt=urn:btmh:1220${'ab'.repeat(32)}` },
+    });
+    fireEvent.submit(screen.getByRole('textbox').closest('form')!);
+    expect(screen.getByText(/Linha 1: torrents apenas v2/)).toBeInTheDocument();
+    expect(mockMeshy.prepareTorrent).not.toHaveBeenCalled();
+});
+
 /**
  * Avança para a etapa de seleção de arquivos do modal.
  * Requer que `renderModal()` já tenha sido chamado no teste.

@@ -7,6 +7,7 @@ export const ErrorCodes = {
     // Torrent
     INVALID_FILE_PATH: 'error.torrent.invalidFilePath',
     INVALID_MAGNET_URI: 'error.torrent.invalidMagnetUri',
+    UNSUPPORTED_V2: 'error.torrent.unsupportedV2',
     TORRENT_DUPLICATE: 'error.torrent.duplicate',
     TORRENT_NOT_FOUND: 'error.torrent.notFound',
 

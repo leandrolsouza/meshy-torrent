@@ -76,6 +76,8 @@ reconhecimento, diagnóstico e documentação são obrigatórios.
 **Áreas:** `shared/validators.ts`, `shared/types.ts`, `main/torrentInput.ts`,
 `main/torrentPreparation.ts`, `main/torrentEngine.ts` e fluxo de adição no renderer.
 
+Resultados parciais e limites da investigação: [compatibilidade e capacidades da engine](ENGINE_COMPATIBILITY.md).
+
 ## 0.3.0 — Controle de transferência e compartilhamento
 
 - [ ] **SEED-01 — Estatísticas persistentes.** Exibir bytes enviados, ratio e tempo

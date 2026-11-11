@@ -21,7 +21,11 @@ import type {
     DiskSpaceInfo,
     TorrentMetadata,
 } from '../shared/types';
-import { DEFAULT_MAX_CONCURRENT_DOWNLOADS, normalizeMagnetUri } from '../shared/validators';
+import {
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+    isV2OnlyMagnetUri,
+    normalizeMagnetUri,
+} from '../shared/validators';
 import { logger as defaultLogger } from './logger';
 import type { Logger } from './logger';
 import {
@@ -934,6 +938,7 @@ class DownloadManagerImpl extends EventEmitter implements DownloadManager {
     // ── addMagnetLink ───────────────────────────────────────────────────────────
 
     async addMagnetLink(magnetUri: string): Promise<DownloadItem> {
+        if (isV2OnlyMagnetUri(magnetUri)) throw new Error(ErrorCodes.UNSUPPORTED_V2);
         const destinationFolder = this.settings.get().destinationFolder;
 
         const magnet = normalizeMagnetUri(magnetUri);

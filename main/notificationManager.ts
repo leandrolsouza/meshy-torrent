@@ -54,8 +54,10 @@ export function createNotificationManager(
     const _log = options.log ?? defaultLogger;
     const getMainWindow = options.getMainWindow ?? (() => options.mainWindow);
 
-    // Rastrear status anterior para detectar transições
-    const previousStatus = new Map<string, string>();
+    // A sessão já foi restaurada: suas atualizações não são novas conclusões.
+    const previousStatus = new Map<string, string>(
+        downloadManager.getAll().map((item) => [item.infoHash, item.status]),
+    );
 
     const onUpdate = (item: DownloadItem): void => {
         const prev = previousStatus.get(item.infoHash);

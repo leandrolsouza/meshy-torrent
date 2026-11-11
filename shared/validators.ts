@@ -61,6 +61,25 @@ export function isValidMagnetUri(uri: string): boolean {
     return normalizeMagnetUri(uri) !== null;
 }
 
+/** Reconhece magnets exclusivamente v2 sem aceitar identidades btih inválidas. */
+export function isV2OnlyMagnetUri(uri: string): boolean {
+    const trimmed = uri.trim();
+    if (!MAGNET_REGEX.test(trimmed)) return false;
+    let hasV2 = false;
+    for (const parameter of trimmed.slice(trimmed.indexOf('?') + 1).split('&')) {
+        const separator = parameter.indexOf('=');
+        if (separator < 0 || parameter.slice(0, separator).toLowerCase() !== 'xt') continue;
+        try {
+            const value = decodeURIComponent(parameter.slice(separator + 1));
+            if (/^urn:btih:/i.test(value)) return false;
+            if (/^urn:btmh:1220[a-f0-9]{64}$/i.test(value)) hasV2 = true;
+        } catch {
+            return false;
+        }
+    }
+    return hasV2;
+}
+
 // ─── Torrent file ─────────────────────────────────────────────────────────────
 
 /**

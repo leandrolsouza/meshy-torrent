@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import type { ExternalTorrentRequest, TorrentSource } from '../shared/types';
-import { isValidMagnetUri, isValidTorrentFile } from '../shared/validators';
+import { isV2OnlyMagnetUri, isValidMagnetUri, isValidTorrentFile } from '../shared/validators';
 
 export interface ExternalTorrentInbox {
     enqueueArguments(args: string[], cwd?: string): void;
@@ -23,7 +23,8 @@ export function createExternalTorrentInbox(onPending: () => void): ExternalTorre
                     continue;
                 const value = arg.startsWith('"') && arg.endsWith('"') ? arg.slice(1, -1) : arg;
                 let source: TorrentSource | undefined;
-                if (isValidMagnetUri(value)) source = { kind: 'magnet', magnetUri: value };
+                if (isValidMagnetUri(value) || isV2OnlyMagnetUri(value))
+                    source = { kind: 'magnet', magnetUri: value };
                 else if (!value.startsWith('-') && !value.includes('\0')) {
                     try {
                         const path = value.startsWith('file:')

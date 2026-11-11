@@ -30,7 +30,7 @@ function createItem(status: DownloadItem['status']): DownloadItem {
 
 test('resolve a janela atual no clique e remove os listeners ao descartar', () => {
     NotificationMock.mockClear();
-    const manager = new EventEmitter();
+    const manager = Object.assign(new EventEmitter(), { getAll: () => [] });
     const settings = { get: () => ({ notificationsEnabled: true }) };
     const initialWindow = {
         isDestroyed: jest.fn(() => true),
@@ -70,4 +70,29 @@ test('resolve a janela atual no clique e remove os listeners ao descartar', () =
     notificationManager.dispose();
     expect(manager.listenerCount('update')).toBe(0);
     expect(manager.listenerCount('remove')).toBe(0);
+});
+
+test('não notifica conclusões restauradas, mas notifica uma nova conclusão', () => {
+    NotificationMock.mockClear();
+    const completed = createItem('completed');
+    const seeding = { ...createItem('seeding'), infoHash: 'b'.repeat(40) };
+    const downloading = { ...createItem('downloading'), infoHash: 'c'.repeat(40) };
+    const manager = Object.assign(new EventEmitter(), {
+        getAll: () => [completed, seeding, downloading],
+    });
+    const settings = { get: () => ({ notificationsEnabled: true }) };
+    const notifications = createNotificationManager(
+        manager as unknown as DownloadManager,
+        settings as unknown as SettingsManager,
+    );
+
+    manager.emit('update', { ...completed, status: 'seeding' });
+    manager.emit('update', { ...seeding, status: 'completed' });
+    expect(NotificationMock).not.toHaveBeenCalled();
+
+    manager.emit('update', { ...downloading, status: 'completed' });
+    expect(NotificationMock).toHaveBeenCalledTimes(1);
+    manager.emit('update', { ...downloading, status: 'seeding' });
+    expect(NotificationMock).toHaveBeenCalledTimes(1);
+    notifications.dispose();
 });

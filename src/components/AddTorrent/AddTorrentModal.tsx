@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import type { DiskSpaceInfo, TorrentPreview, TorrentSource } from '../../../shared/types';
-import { isValidMagnetUri } from '../../../shared/validators';
+import { isV2OnlyMagnetUri, isValidMagnetUri } from '../../../shared/validators';
 import { useDownloadStore } from '../../store/downloadStore';
 import { formatBytes } from '../../utils/formatters';
 import { resolveErrorMessage } from '../../utils/resolveErrorMessage';
@@ -203,6 +203,16 @@ export function AddTorrentModal({
             .filter(Boolean);
         if (!lines.length) {
             setError(intl.formatMessage({ id: 'addTorrent.magnetLink.empty' }));
+            return;
+        }
+        const unsupported = lines.findIndex(isV2OnlyMagnetUri);
+        if (unsupported !== -1) {
+            setError(
+                intl.formatMessage(
+                    { id: 'addTorrent.magnetLink.unsupportedV2' },
+                    { line: unsupported + 1 },
+                ),
+            );
             return;
         }
         const invalid = lines.findIndex((line) => !isValidMagnetUri(line));

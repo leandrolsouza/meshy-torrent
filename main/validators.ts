@@ -3,6 +3,7 @@
 export {
     isValidMagnetUri,
     normalizeMagnetUri,
+    isV2OnlyMagnetUri,
     isValidTorrentFile,
     hasTorrentMagicBytes,
     isValidSpeedLimit,

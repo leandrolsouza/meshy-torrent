@@ -1,6 +1,7 @@
 import {
     isValidMagnetUri,
     normalizeMagnetUri,
+    isV2OnlyMagnetUri,
     isValidTorrentFile,
     hasTorrentMagicBytes,
     isValidSpeedLimit,
@@ -16,6 +17,14 @@ import fc from 'fast-check';
 
 describe('isValidMagnetUri', () => {
     const VALID_HASH = 'a'.repeat(40); // 40 hex chars
+
+    it('reconhece exclusivamente magnets v2 com multihash SHA-256 completo', () => {
+        const v2 = `magnet:?dn=sample&xt=urn:btmh:1220${'ab'.repeat(32)}`;
+        expect(isV2OnlyMagnetUri(v2)).toBe(true);
+        expect(isV2OnlyMagnetUri(`${v2}&xt=urn:btih:${VALID_HASH}`)).toBe(false);
+        expect(isV2OnlyMagnetUri(`${v2}&xt=urn:btih:invalid`)).toBe(false);
+        expect(isV2OnlyMagnetUri('magnet:?xt=urn:btmh:1220abcd')).toBe(false);
+    });
 
     it('accepts a minimal valid magnet URI', () => {
         expect(isValidMagnetUri(`magnet:?xt=urn:btih:${VALID_HASH}`)).toBe(true);

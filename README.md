@@ -7,7 +7,7 @@ de lançamento da primeira versão estável. O [roadmap pós-1.0](docs/ROADMAP_P
 detalha a evolução planejada de funcionalidades e plataformas.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-0.1.0--beta.14-orange.svg)
+![Version](https://img.shields.io/badge/version-0.2.1-orange.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
 
 ---
@@ -191,7 +191,7 @@ artifacts in `dist/`, without publishing releases. Configuration lives in
 dependencies and may require network access and platform-specific tools. Each installer should
 be validated on its corresponding system before publishing.
 
-The current version is **0.1.0-beta.14**. Use `npm run dist:win` to generate the Windows x64
+The version in the project manifest is **0.2.1**. Use `npm run dist:win` to generate the Windows x64
 NSIS installer and `dist/SHA256SUMS`. Publishing depends on the
 [release qualification](docs/RELEASE.md). Unsigned builds use the official update feed and
 verify the installer hash, but cannot verify publisher identity. See
